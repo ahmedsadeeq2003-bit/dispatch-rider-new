@@ -1,0 +1,82 @@
+{
+  "project_info": {
+    "project_number": "691295757862",
+    "project_id": "dispatch-rider-2fb16-b28e7",
+    "storage_bucket": "dispatch-rider-2fb16-b28e7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:691295757862:android:da36762fc4e9146d0228e7",
+        "android_client_info": {
+          "package_name": "com.example.dispatch_rider"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "691295757862-5c75erkeh0h8oj8dviu8t2g9cp8e275r.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAVCwUpDyOVO_wDhLrAgOGGJBdOK0qUXeI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "691295757862-5c75erkeh0h8oj8dviu8t2g9cp8e275r.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "691295757862-de8sioqglh16r4vrkjhchfcp7qo9cnvf.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.dispatchRider"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:691295757862:android:1c8c406cd522a7880228e7",
+        "android_client_info": {
+          "package_name": "com.example.dispatch_rider_new"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "691295757862-5c75erkeh0h8oj8dviu8t2g9cp8e275r.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAVCwUpDyOVO_wDhLrAgOGGJBdOK0qUXeI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "691295757862-5c75erkeh0h8oj8dviu8t2g9cp8e275r.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "691295757862-de8sioqglh16r4vrkjhchfcp7qo9cnvf.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.dispatchRider"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,4 @@
+- [ ] Update pricing_utils.dart to remove package types, set base fare to 500 naira, per km to 100 naira, remove minimum fares and size logic.
+- [ ] Modify dispatch_order_screen.dart to remove weight input, package tiles, and price calculation/display from the sheet. Update _confirmOrder to pass only pickup and destination.
+- [ ] Update confirm_delivery_screen.dart to calculate price using locations in didChangeDependencies and display it. Adjust args to remove package, price, weight.
+- [ ] Test the app to ensure price shows only after clicking Confirm Order.

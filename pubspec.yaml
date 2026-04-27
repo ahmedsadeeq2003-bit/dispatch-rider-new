@@ -1,0 +1,52 @@
+name: dispatch_rider_new
+description: A Flutter app to connect dispatch riders with clients for package delivery.
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI / Animations
+  lottie: ^3.1.0
+  cupertino_icons: ^1.0.8
+
+  # Maps & Location
+  location: ^6.0.1
+  geolocator: ^13.0.2
+  geocoding: ^2.1.0
+
+  # Firebase
+  firebase_core: ^3.4.0
+  firebase_auth: ^5.3.0
+  firebase_messaging: ^15.1.0
+  cloud_firestore: ^5.4.0
+
+  # Notifications
+  flutter_local_notifications: ^17.2.2
+
+  # State Management & Storage
+  provider: ^6.1.5
+  shared_preferences: ^2.5.3
+
+  # Utilities
+  url_launcher: ^6.3.2
+  flutter_launcher_icons: ^0.14.4
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
+  http: ^1.2.1
+  image_picker: ^1.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/google_icon.png
+    - assets/icloud_icon.png
+    - assets/animations/Delivery Riding.json
