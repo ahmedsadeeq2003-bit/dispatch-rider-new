@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class LocationTrackingService {
   static final LocationTrackingService _instance =
@@ -15,7 +17,7 @@ class LocationTrackingService {
 
   // Tracking configuration
   static const Duration _updateInterval = Duration(seconds: 30);
-  static const LocationAccuracy _accuracy = LocationAccuracy.high;
+  static final LocationAccuracy _accuracy = LocationAccuracy.high;
 
   /// Check if location services are enabled and permissions are granted
   Future<bool> _checkPermissions() async {
@@ -77,7 +79,7 @@ class LocationTrackingService {
         desiredAccuracy: _accuracy,
       );
 
-      // Store location update in Firestore subcollection
+      // Store delivery location update
       await _firestore
           .collection('deliveries')
           .doc(_currentDeliveryId!)
@@ -86,9 +88,18 @@ class LocationTrackingService {
         'latitude': position.latitude,
         'longitude': position.longitude,
         'timestamp': FieldValue.serverTimestamp(),
-        'speed': position.speed, // meters per second
+        'speed': position.speed,
         'accuracy': position.accuracy,
       });
+      // Update rider's current position
+      String? riderId = FirebaseAuth.instance.currentUser?.uid;
+      if (riderId != null) {
+        await _firestore.collection('users').doc(riderId).set({
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'lastLocationUpdate': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
 
       print(
           'Location updated for delivery $_currentDeliveryId: ${position.latitude}, ${position.longitude}');

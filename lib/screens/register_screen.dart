@@ -14,6 +14,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _companyCodeController = TextEditingController();
   bool _loading = false;
 
   void _register() async {
@@ -23,16 +24,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       password: _passwordController.text.trim(),
       name: _nameController.text.trim(),
       context: context,
+      companyCode: _companyCodeController.text.trim(),
     );
+
     setState(() => _loading = false);
 
-    if (error == null) {
-      Navigator.pushReplacementNamed(context, '/dashboard');
-    } else {
+    if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error)),
       );
     }
+    // Navigation handled by AuthService
   }
 
   @override

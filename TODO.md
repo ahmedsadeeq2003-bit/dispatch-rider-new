@@ -1,4 +1,14 @@
-- [ ] Update pricing_utils.dart to remove package types, set base fare to 500 naira, per km to 100 naira, remove minimum fares and size logic.
-- [ ] Modify dispatch_order_screen.dart to remove weight input, package tiles, and price calculation/display from the sheet. Update _confirmOrder to pass only pickup and destination.
-- [ ] Update confirm_delivery_screen.dart to calculate price using locations in didChangeDependencies and display it. Adjust args to remove package, price, weight.
-- [ ] Test the app to ensure price shows only after clicking Confirm Order.
+# TODO (Multi-company / Rental)
+
+- [x] Step 1: Add `companies` collection + `companyId` fields to `users` and `deliveries` (+ optional `locationUpdates` handling)
+
+- [ ] Step 2: Update `AuthService` to capture/set `companyId` during register/login and keep it available in app
+- [ ] Step 3: Update `DeliveryService` to write/read tenant-scoped deliveries and filter rider matching/queries by `companyId`
+- [ ] Step 4: Update `LocationTrackingService` to ensure location updates are written/allowed only within same company
+- [ ] Step 5: Update all delivery-related screens to use updated tenant-scoped service methods
+- [ ] Step 6: Replace mocked `CompletedDeliveriesScreen` with Firestore-backed implementation
+- [ ] Step 7: Update Firestore security rules for strict tenant isolation (`companyId` checks)
+- [x] Step 8: Add minimal UI flow to select/join a company (invite code) and persist selection (placeholder)
+
+- [ ] Step 9: Smoke test: create company, register client/rider, dispatch delivery, accept, track live, complete
+

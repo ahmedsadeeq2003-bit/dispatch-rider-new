@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
-import 'package:geolocator/geolocator.dart';
 import '../services/auth_service.dart';
 
 class RiderRegisterScreen extends StatefulWidget {
@@ -15,6 +14,7 @@ class _RiderRegisterScreenState extends State<RiderRegisterScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _phoneController = TextEditingController();
   bool _loading = false;
 
   void _register() async {
@@ -22,9 +22,14 @@ class _RiderRegisterScreenState extends State<RiderRegisterScreen> {
     final error = await _authService.registerRider(
       email: _emailController.text.trim(),
       password: _passwordController.text.trim(),
-      name: _nameController.text.trim(),
+      fullName: _nameController.text.trim(),
+      phoneNumber: _phoneController.text.trim(),
+      // TODO: Replace with real company invite code input.
+      companyCode: 'DEFAULT',
+
       context: context,
     );
+
     setState(() => _loading = false);
 
     if (error != null) {
@@ -44,7 +49,7 @@ class _RiderRegisterScreenState extends State<RiderRegisterScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const SizedBox(height: 60),
-            // 🎞️ Lottie animation
+            // Lottie animation
             Lottie.asset('assets/animations/Delivery Riding.json', height: 180),
             const SizedBox(height: 20),
 
@@ -64,7 +69,7 @@ class _RiderRegisterScreenState extends State<RiderRegisterScreen> {
             ),
             const SizedBox(height: 40),
 
-            // 🧍 Name
+            // Full Name
             TextField(
               controller: _nameController,
               decoration: InputDecoration(
@@ -77,7 +82,7 @@ class _RiderRegisterScreenState extends State<RiderRegisterScreen> {
             ),
             const SizedBox(height: 20),
 
-            // 📧 Email
+            // Email
             TextField(
               controller: _emailController,
               decoration: InputDecoration(
@@ -90,7 +95,20 @@ class _RiderRegisterScreenState extends State<RiderRegisterScreen> {
             ),
             const SizedBox(height: 20),
 
-            // 🔒 Password
+            // Phone Number
+            TextField(
+              controller: _phoneController,
+              decoration: InputDecoration(
+                labelText: "Phone Number",
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixIcon: const Icon(Icons.phone),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Password
             TextField(
               controller: _passwordController,
               obscureText: true,
@@ -104,7 +122,7 @@ class _RiderRegisterScreenState extends State<RiderRegisterScreen> {
             ),
             const SizedBox(height: 30),
 
-            // 🚀 Register Button
+            // Register Button
             _loading
                 ? const CircularProgressIndicator()
                 : SizedBox(
@@ -127,7 +145,7 @@ class _RiderRegisterScreenState extends State<RiderRegisterScreen> {
 
             const SizedBox(height: 20),
 
-            // 🔁 Login Redirect
+            // Login Redirect
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

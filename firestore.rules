@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 👤 USERS (Customers + Riders + FCM tokens + online/rating + verification)
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+      // Riders can update verification (subcollection or field)
+      allow update: if request.auth != null && request.auth.uid == userId && 
+        'verification' in request.resource.data.keys();
+    }
+
+    // 🚴 Riders data in /users (role: 'rider')
+
+    // 📦 DELIVERIES / DISPATCH ORDERS
+    match /deliveries/{deliveryId} {
+
+      // ✅ CREATE (only logged-in user creating their own order)
+      allow create: if request.auth != null
+                    && request.resource.data.customerId == request.auth.uid;
+
+      // ✅ READ
+      allow read: if request.auth != null &&
+        (
+          // Customer can read their own orders
+          request.auth.uid == resource.data.customerId ||
+
+          // Rider can read orders assigned to them
+          request.auth.uid == resource.data.riderId ||
+
+          // 🔥 Riders can see pending deliveries
+          resource.data.status == "pending"
+        );
+
+      // ✅ UPDATE (accepting + status changes)
+      allow update: if request.auth != null &&
+        (
+          // Customer can update their own order
+          request.auth.uid == resource.data.customerId ||
+
+          // Rider can update assigned order
+          request.auth.uid == resource.data.riderId ||
+
+          // 🔥 Allow rider to ACCEPT a pending job
+          (
+            resource.data.status == "pending" &&
+            request.resource.data.riderId == request.auth.uid
+          )
+        );
+
+      // ❌ DELETE (optional: block deletes for safety)
+      allow delete: if false;
+    }
+  }
+}

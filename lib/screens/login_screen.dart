@@ -24,13 +24,12 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     setState(() => _loading = false);
 
-    if (error == null) {
-      Navigator.pushReplacementNamed(context, '/rider');
-    } else {
+    if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error)),
       );
     }
+    // Navigation handled by AuthService
   }
 
   @override

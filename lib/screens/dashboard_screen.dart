@@ -1,7 +1,31 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
+
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              AuthService().signOut(context);
+            },
+            child: const Text('Logout', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -10,6 +34,85 @@ class DashboardScreen extends StatelessWidget {
         title: const Text('Dashboard'),
         centerTitle: true,
         backgroundColor: Colors.deepPurple,
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            onSelected: (value) {
+              switch (value) {
+                case 'profile':
+                  Navigator.pushNamed(context, '/profile');
+                  break;
+                case 'my_deliveries':
+                  Navigator.pushNamed(context, '/activedeliveries');
+                  break;
+                case 'contact_us':
+                  Navigator.pushNamed(context, '/contact-us');
+                  break;
+                case 'settings':
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Settings coming soon!')),
+                  );
+                  break;
+                case 'logout':
+                  _showLogoutDialog(context);
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'profile',
+                child: Row(
+                  children: [
+                    Icon(Icons.person, color: Colors.deepPurple),
+                    SizedBox(width: 12),
+                    Text('Profile'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'my_deliveries',
+                child: Row(
+                  children: [
+                    Icon(Icons.delivery_dining, color: Colors.orange),
+                    SizedBox(width: 12),
+                    Text('My Deliveries'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'contact_us',
+                child: Row(
+                  children: [
+                    Icon(Icons.support_agent, color: Colors.green),
+                    SizedBox(width: 12),
+                    Text('Contact Us'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.settings, color: Colors.grey),
+                    SizedBox(width: 12),
+                    Text('Settings'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, color: Colors.red),
+                    SizedBox(width: 12),
+                    Text('Logout', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -139,7 +242,7 @@ class DashboardScreen extends StatelessWidget {
                 Expanded(
                   child: GestureDetector(
                     onTap: () {
-                      // TODO: Completed Deliveries screen
+                      Navigator.pushNamed(context, '/completed-deliveries');
                     },
                     child: Card(
                       color: Colors.blue,

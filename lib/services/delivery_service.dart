@@ -1,6 +1,5 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'notification_service.dart';
 import 'location_tracking_service.dart';
 
@@ -16,6 +15,7 @@ class DeliveryService {
     required String packageType,
     required double price,
     required String paymentMethod,
+    required String companyId,
     double? pickupLat,
     double? pickupLon,
     double? destLat,
@@ -51,7 +51,7 @@ class DeliveryService {
     }
   }
 
-  // Find and notify nearest rider about new delivery request
+  // Smart notify: online riders within radius, prefer near/high-rated
   static Future<void> _notifyRidersOfNewDelivery(
       String deliveryId,
       String pickup,
@@ -60,91 +60,90 @@ class DeliveryService {
       double? pickupLon) async {
     try {
       if (pickupLat == null || pickupLon == null) {
-        // Fallback to notifying all riders if no location data
-        await _notifyAllRiders(deliveryId, pickup, destination);
+        await _notifyAllOnlineRiders(deliveryId, pickup, destination);
         return;
       }
 
-      // Get all riders with location data
+      // Get online riders with location
       QuerySnapshot ridersSnapshot = await _firestore
           .collection('users')
           .where('role', isEqualTo: 'rider')
+          .where('isOnline', isEqualTo: true)
           .where('latitude', isNotEqualTo: null)
           .where('longitude', isNotEqualTo: null)
           .get();
 
-      if (ridersSnapshot.docs.isEmpty) {
-        // No riders with location data, fallback to all riders
-        await _notifyAllRiders(deliveryId, pickup, destination);
-        return;
-      }
-
-      // Find nearest rider
-      String? nearestRiderId;
-      double minDistance = double.infinity;
-
+      List<Map<String, dynamic>> candidates = [];
       for (var doc in ridersSnapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        final riderLat = data['latitude'] as double?;
-        final riderLon = data['longitude'] as double?;
-
-        if (riderLat != null && riderLon != null) {
-          final distance =
-              _calculateDistance(pickupLat, pickupLon, riderLat, riderLon);
-          if (distance < minDistance) {
-            minDistance = distance;
-            nearestRiderId = doc.id;
-          }
+        final lat = data['latitude'] as double?;
+        final lon = data['longitude'] as double?;
+        final rating = (data['rating'] ?? 5.0) as double;
+        if (lat != null && lon != null) {
+          final distance = _calculateDistance(pickupLat, pickupLon, lat, lon);
+          candidates.add({
+            'id': doc.id,
+            'distance': distance,
+            'rating': rating,
+            'fcmToken': data['fcmToken'] ?? '',
+          });
         }
       }
 
-      if (nearestRiderId != null) {
-        // Get FCM token for nearest rider
-        DocumentSnapshot riderDoc =
-            await _firestore.collection('riders').doc(nearestRiderId).get();
-        String? token = riderDoc.exists ? riderDoc['fcmToken'] : null;
+      // Filter/sort by radius + score
+      List<Map<String, dynamic>> topCandidates = [];
+      for (final radius in [10.0, 15.0]) {
+        topCandidates =
+            candidates.where((c) => c['distance'] <= radius).toList()
+              ..sort((a, b) {
+                final scoreA = a['rating'] - a['distance'] / 10;
+                final scoreB = b['rating'] - b['distance'] / 10;
+                return scoreB.compareTo(scoreA); // desc rating, asc distance
+              });
+        if (topCandidates.length >= 3) break;
+      }
 
-        if (token != null && token.isNotEmpty) {
-          await _sendNotificationToRiders(
-              [token], deliveryId, pickup, destination);
-        } else {
-          // No FCM token, fallback to all riders
-          await _notifyAllRiders(deliveryId, pickup, destination);
-        }
+      final tokens = topCandidates
+          .take(5)
+          .where((c) => c['fcmToken'].isNotEmpty)
+          .map((c) => c['fcmToken'] as String)
+          .toList();
+      if (tokens.isNotEmpty) {
+        await _sendNotificationToRiders(
+            tokens, deliveryId, pickup, destination);
       } else {
-        // No nearest rider found, fallback to all riders
-        await _notifyAllRiders(deliveryId, pickup, destination);
+        await _notifyAllOnlineRiders(deliveryId, pickup, destination);
       }
     } catch (e) {
-      print('Error notifying nearest rider: $e');
-      // Fallback to all riders on error
-      await _notifyAllRiders(deliveryId, pickup, destination);
+      print('Error notifying riders: $e');
+      await _notifyAllOnlineRiders(deliveryId, pickup, destination);
     }
   }
 
-  // Fallback: Notify all riders about new delivery request
-  static Future<void> _notifyAllRiders(
+  // Fallback: Notify all online riders
+  static Future<void> _notifyAllOnlineRiders(
       String deliveryId, String pickup, String destination) async {
     try {
-      // Get all rider FCM tokens
-      QuerySnapshot ridersSnapshot =
-          await _firestore.collection('riders').get();
+      QuerySnapshot ridersSnapshot = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'rider')
+          .where('isOnline', isEqualTo: true)
+          .get();
 
       List<String> riderTokens = [];
       for (var doc in ridersSnapshot.docs) {
-        String? token = doc.data() as String?;
+        String? token = doc['fcmToken'];
         if (token != null && token.isNotEmpty) {
           riderTokens.add(token);
         }
       }
 
-      // Send push notification to all riders
       if (riderTokens.isNotEmpty) {
         await _sendNotificationToRiders(
             riderTokens, deliveryId, pickup, destination);
       }
     } catch (e) {
-      print('Error notifying all riders: $e');
+      print('Error notifying all online riders: $e');
     }
   }
 
@@ -216,9 +215,9 @@ class DeliveryService {
           await _firestore.collection('deliveries').doc(deliveryId).get();
       String clientId = deliveryDoc['clientId'];
 
-      // Get client FCM token
+      // Get client FCM token from users collection
       DocumentSnapshot clientDoc =
-          await _firestore.collection('clients').doc(clientId).get();
+          await _firestore.collection('users').doc(clientId).get();
       String? clientToken = clientDoc['fcmToken'];
 
       if (clientToken != null && clientToken.isNotEmpty) {
@@ -247,12 +246,21 @@ class DeliveryService {
   }
 
   // Get active deliveries for a rider
-  static Stream<QuerySnapshot> getActiveDeliveries(String riderId) {
+  static Stream<QuerySnapshot> getActiveDeliveries(String uid) {
     return _firestore
         .collection('deliveries')
-        .where('riderId', isEqualTo: riderId)
+        .where('riderId', isEqualTo: uid)
         .where('status', isEqualTo: 'accepted')
         .orderBy('acceptedAt', descending: true)
+        .snapshots();
+  }
+
+  // Get client's deliveries (active + completed)
+  static Stream<QuerySnapshot> getClientDeliveries(String clientId) {
+    return _firestore
+        .collection('deliveries')
+        .where('clientId', isEqualTo: clientId)
+        .orderBy('createdAt', descending: true)
         .snapshots();
   }
 
@@ -288,28 +296,28 @@ class DeliveryService {
     }
   }
 
-  // Register rider FCM token
-  static Future<void> registerRiderToken(String riderId, String token) async {
+  // Update rider rating after completion
+  static Future<void> updateRiderRating(String riderId, double rating) async {
     try {
-      await _firestore.collection('riders').doc(riderId).set({
-        'fcmToken': token,
-        'lastUpdated': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _firestore.collection('users').doc(riderId).update({
+        'totalRatings': FieldValue.increment(rating),
+        'totalDeliveries': FieldValue.increment(1),
+      });
+      // Recalc rating via cloud function or client-side avg
     } catch (e) {
-      print('Error registering rider token: $e');
-      throw e;
+      print('Error updating rider rating: $e');
     }
   }
 
-  // Register client FCM token
-  static Future<void> registerClientToken(String clientId, String token) async {
+  // Register rider FCM token (updates users/{uid})
+  static Future<void> registerToken(String uid, String token) async {
     try {
-      await _firestore.collection('clients').doc(clientId).set({
+      await _firestore.collection('users').doc(uid).set({
         'fcmToken': token,
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
-      print('Error registering client token: $e');
+      print('Error registering FCM token: $e');
       throw e;
     }
   }

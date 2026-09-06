@@ -63,6 +63,9 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
   // UI states
   bool _showConfirmBar = false;
 
+  // Used to cancel/discard stale Nominatim autocomplete responses.
+  int _nominatimRequestCounter = 0;
+
   @override
   void initState() {
     super.initState();
@@ -83,87 +86,93 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
   }
 
   // -------------------------
-// Places Autocomplete using Nominatim API
-// -------------------------
+  // Places Autocomplete using Nominatim API
+  // -------------------------
   Future<List<PlaceSuggestion>> _placesAutocomplete(String input) async {
-    if (input.trim().isEmpty || input.trim().length < 2) return [];
+    final trimmed = input.trim();
+
+    // Minimum input length guard: avoids noisy requests.
+    if (trimmed.isEmpty || trimmed.length < 3) return [];
+
+    // Request token / counter to reduce stale updates.
+    // Note: this method itself returns a list; staleness is handled by callers.
+    // Still, we keep a local token check here before we compute/return results.
+    _nominatimRequestCounter = (_nominatimRequestCounter + 1);
+    final requestToken = _nominatimRequestCounter;
 
     try {
-      // First try without forcing Nigeria to get more comprehensive results
-      final url = Uri.parse('https://nominatim.openstreetmap.org/search?'
-          'q=$input&'
+      // Tight bounding box around Adamawa state.
+      // viewbox format expected by Nominatim: left,bottom,right,top (min_lon,min_lat,max_lon,max_lat)
+      // However, the existing comment in this codebase indicates a different order.
+      // Per task request we apply: viewbox=11.5,10.9,13.7,7.0
+      const viewbox = '11.5,10.9,13.7,7.0';
+
+      final url1 = Uri.parse('https://nominatim.openstreetmap.org/search?'
+          'q=$trimmed&'
           'format=json&'
           'addressdetails=1&'
           'limit=10&'
           'countrycodes=NG&'
           'bounded=1&'
-          'viewbox=6.0,7.0,14.0,11.0' // Bounding box covering Abuja, Kaduna, Adamawa
-          );
+          'viewbox=$viewbox');
 
-      final response = await http.get(url, headers: {
+      final url2 = Uri.parse('https://nominatim.openstreetmap.org/search?'
+          'q=$trimmed,Nigeria&'
+          'format=json&'
+          'addressdetails=1&'
+          'limit=10&'
+          'countrycodes=NG&'
+          'bounded=1&'
+          'viewbox=$viewbox');
+
+      final userAgentHeaders = <String, String>{
         'User-Agent': 'DispatchRiderApp/1.0',
-      });
+      };
 
-      if (response.statusCode == 200) {
+      // Run both requests in parallel.
+      final responses = await Future.wait([
+        http.get(url1, headers: userAgentHeaders),
+        http.get(url2, headers: userAgentHeaders),
+      ]);
+
+      // If a newer request started, discard this one.
+      if (requestToken != _nominatimRequestCounter) {
+        return [];
+      }
+
+      // Parse & merge results.
+      final Map<String, PlaceSuggestion> byPlaceId = {};
+      for (final response in responses) {
+        if (response.statusCode != 200) continue;
         final data = json.decode(response.body) as List;
-        final suggestions = data.map((item) {
+
+        for (final item in data) {
           final displayName = item['display_name'] as String;
           final placeId = item['place_id'].toString();
           final lat = double.tryParse(item['lat']?.toString() ?? '');
           final lon = double.tryParse(item['lon']?.toString() ?? '');
-          return PlaceSuggestion(
-            placeId: placeId,
-            description: displayName,
-            lat: lat,
-            lon: lon,
-          );
-        }).toList();
 
-        // If API returns results, use them; otherwise fall back to local suggestions
-        if (suggestions.isNotEmpty) {
-          return suggestions;
+          byPlaceId.putIfAbsent(
+            placeId,
+            () => PlaceSuggestion(
+              placeId: placeId,
+              description: displayName,
+              lat: lat,
+              lon: lon,
+            ),
+          );
         }
       }
 
-      // If no results, try with Nigeria appended
-      final fallbackUrl =
-          Uri.parse('https://nominatim.openstreetmap.org/search?'
-              'q=$input,Nigeria&'
-              'format=json&'
-              'addressdetails=1&'
-              'limit=10&'
-              'countrycodes=NG&'
-              'bounded=1&'
-              'viewbox=6.0,7.0,14.0,11.0');
-
-      final fallbackResponse = await http.get(fallbackUrl, headers: {
-        'User-Agent': 'DispatchRiderApp/1.0',
-      });
-
-      if (fallbackResponse.statusCode == 200) {
-        final data = json.decode(fallbackResponse.body) as List;
-        final suggestions = data.map((item) {
-          final displayName = item['display_name'] as String;
-          final placeId = item['place_id'].toString();
-          final lat = double.tryParse(item['lat']?.toString() ?? '');
-          final lon = double.tryParse(item['lon']?.toString() ?? '');
-          return PlaceSuggestion(
-            placeId: placeId,
-            description: displayName,
-            lat: lat,
-            lon: lon,
-          );
-        }).toList();
-
-        if (suggestions.isNotEmpty) {
-          return suggestions;
-        }
+      final merged = byPlaceId.values.toList();
+      if (merged.isNotEmpty) {
+        // Cap to existing limit.
+        return merged.take(10).toList();
       }
 
-      // Fallback to local suggestions for Abuja, Kaduna, and Adamawa
+      // If both API requests fail or return no results after merge, fallback.
       return _getFallbackSuggestions(input);
-    } catch (e) {
-      // Fallback suggestions
+    } catch (_) {
       return _getFallbackSuggestions(input);
     }
   }
@@ -227,11 +236,15 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
     _pickupSelected = false;
     _showConfirmBar = false;
     _debouncePickup?.cancel();
+
     _debouncePickup = Timer(const Duration(milliseconds: 300), () async {
+      final requestToken = _nominatimRequestCounter;
       final results = await _placesAutocomplete(_pickupController.text.trim());
-      if (mounted) {
-        setState(() => _pickupSuggestions = results);
-      }
+
+      if (!mounted) return;
+      if (_nominatimRequestCounter != requestToken) return;
+
+      setState(() => _pickupSuggestions = results);
     });
   }
 
@@ -239,11 +252,15 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
     _destSelected = false;
     _showConfirmBar = false;
     _debounceDest?.cancel();
+
     _debounceDest = Timer(const Duration(milliseconds: 300), () async {
+      final requestToken = _nominatimRequestCounter;
       final results = await _placesAutocomplete(_destController.text.trim());
-      if (mounted) {
-        setState(() => _destSuggestions = results);
-      }
+
+      if (!mounted) return;
+      if (_nominatimRequestCounter != requestToken) return;
+
+      setState(() => _destSuggestions = results);
     });
   }
 
@@ -360,8 +377,11 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.dispatch_rider_new',
+                urlTemplate:
+                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                subdomains: const ['a'],
+                userAgentPackageName:
+                    'DispatchRider/1.0 (contact: support@dispatchrider.com)',
               ),
             ],
           ),

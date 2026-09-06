@@ -4,16 +4,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // 🔹 Register user (client)
+  // Register user (client)
   Future<String?> registerUser({
     required String email,
     required String password,
     required String name,
     required BuildContext context,
+    String? companyCode,
   }) async {
     try {
       // Check if email is already registered (either as client or rider)
@@ -39,15 +41,33 @@ class AuthService {
       String uid = userCredential.user!.uid;
 
       // Save user details to Firestore
+      // Resolve companyCode -> companyId (tenant)
+      // Expected schema (later steps will enforce): companies/{companyId} has `code` field.
+      String? companyId;
+      if (companyCode != null && companyCode.trim().isNotEmpty) {
+        final companyQuery = await FirebaseFirestore.instance
+            .collection('companies')
+            .where('code', isEqualTo: companyCode.trim())
+            .limit(1)
+            .get();
+
+        if (companyQuery.docs.isEmpty) {
+          return 'Invalid company code.';
+        }
+        companyId = companyQuery.docs.first.id;
+      }
+
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'name': name,
         'email': email,
         'role': 'client',
+        'companyCode': companyCode,
+        'companyId': companyId,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // ✅ Redirect to Client Dashboard (Dispatch)
-      Navigator.pushReplacementNamed(context, '/dispatch');
+      // Redirect to Client Dashboard
+      Navigator.pushReplacementNamed(context, '/dashboard');
 
       return null; // success
     } on FirebaseAuthException catch (e) {
@@ -63,11 +83,13 @@ class AuthService {
     }
   }
 
-  // 🔹 Register rider
+  // Register rider
   Future<String?> registerRider({
     required String email,
     required String password,
-    required String name,
+    required String fullName,
+    required String phoneNumber,
+    required String companyCode,
     required BuildContext context,
   }) async {
     try {
@@ -138,18 +160,43 @@ class AuthService {
       // Get the user's UID
       String uid = userCredential.user!.uid;
 
+      // Resolve companyCode -> companyId (tenant)
+      String companyId = '';
+      if (companyCode.trim().isNotEmpty) {
+        final companyQuery = await FirebaseFirestore.instance
+            .collection('companies')
+            .where('code', isEqualTo: companyCode.trim())
+            .limit(1)
+            .get();
+
+        if (companyQuery.docs.isEmpty) {
+          return 'Invalid company code.';
+        }
+        companyId = companyQuery.docs.first.id;
+      } else {
+        return 'Company code is required.';
+      }
+
       // Save user details to Firestore with location
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'name': name,
+        'name': fullName,
         'email': email,
+        'phoneNumber': phoneNumber,
         'role': 'rider',
         'latitude': position.latitude,
         'longitude': position.longitude,
         'lastLocationUpdate': FieldValue.serverTimestamp(),
+        'isOnline': false,
+        'rating': 5.0,
+        'totalDeliveries': 0,
+        'totalRatings': 0.0,
+        'fcmToken': '',
+        'companyCode': companyCode,
+        'companyId': companyId,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // ✅ Redirect to Rider Verification
+      // Redirect to Rider Verification
       Navigator.pushReplacementNamed(context, '/rider-verification');
 
       return null; // success
@@ -166,7 +213,7 @@ class AuthService {
     }
   }
 
-  // 🔹 Login user (client)
+  // Login user (client)
   Future<String?> loginUser({
     required String email,
     required String password,
@@ -187,19 +234,20 @@ class AuthService {
           'name': email.split('@')[0], // Use email prefix as name
           'email': email,
           'role': 'client',
+          // companyId is missing for legacy users; user must join a company.
           'createdAt': FieldValue.serverTimestamp(),
         });
-        Navigator.pushReplacementNamed(context, '/dispatch');
+        Navigator.pushReplacementNamed(context, '/dashboard');
         return null;
       }
 
       String role = userDoc['role'] ?? 'client';
 
-      // ✅ Redirect based on role
+      // Redirect based on role
       if (role == 'rider') {
-        Navigator.pushReplacementNamed(context, '/rider');
+        Navigator.pushReplacementNamed(context, '/rider-dashboard');
       } else {
-        Navigator.pushReplacementNamed(context, '/dispatch');
+        Navigator.pushReplacementNamed(context, '/dashboard');
       }
 
       return null; // success
@@ -216,7 +264,7 @@ class AuthService {
     }
   }
 
-  // 🔹 Login rider
+  // Login rider
   Future<String?> loginRider({
     required String email,
     required String password,
@@ -237,17 +285,25 @@ class AuthService {
           'name': email.split('@')[0], // Use email prefix as name
           'email': email,
           'role': 'rider',
+          'isOnline': false,
+          'rating': 5.0,
+          'totalDeliveries': 0,
+          'totalRatings': 0.0,
+          'fcmToken': '',
+          'latitude': 0.0,
+          'longitude': 0.0,
+          'lastLocationUpdate': FieldValue.serverTimestamp(),
           'createdAt': FieldValue.serverTimestamp(),
-        });
-        Navigator.pushReplacementNamed(context, '/rider');
+        }, SetOptions(merge: true));
+        Navigator.pushReplacementNamed(context, '/rider-dashboard');
         return null;
       }
 
       String role = userDoc['role'] ?? 'rider';
 
-      // ✅ Redirect to Rider Dashboard if role is rider
+      // Redirect to Rider Dashboard if role is rider
       if (role == 'rider') {
-        Navigator.pushReplacementNamed(context, '/rider');
+        Navigator.pushReplacementNamed(context, '/rider-dashboard');
       } else {
         return 'Access denied: Not a rider account.';
       }
@@ -266,40 +322,43 @@ class AuthService {
     }
   }
 
-  // 🔹 Submit rider verification
+  // Submit rider verification
   Future<String?> submitRiderVerification({
     required String nin,
     required String address,
-    required String proofOfAddress,
+    required File proofImage,
+    required File selfieImage,
     required String fullName,
-    required String nextOfKin,
-    required String nextOfKinPhone,
-    required String nextOfKinRelationship,
-    required File documentImage,
     required BuildContext context,
   }) async {
     try {
-      String uid = _auth.currentUser!.uid;
+      String uid = FirebaseAuth.instance.currentUser!.uid;
+      final storage = FirebaseStorage.instance;
 
-      // Upload document image to Firebase Storage (simplified - in production, use Firebase Storage)
-      // For now, we'll just store the file path or base64, but ideally upload to cloud storage
+      // Upload proof of address
+      final proofRef = storage.ref().child(
+          'rider_verification/proof_$uid/${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final proofSnapshot = await proofRef.putFile(proofImage);
+      final proofUrl = await proofSnapshot.ref.getDownloadURL();
+
+      // Upload selfie
+      final selfieRef = storage.ref().child(
+          'rider_verification/selfie_$uid/${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final selfieSnapshot = await selfieRef.putFile(selfieImage);
+      final selfieUrl = await selfieSnapshot.ref.getDownloadURL();
 
       // Update user document with verification details
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'verification': {
           'nin': nin,
           'address': address,
-          'proofOfAddress': proofOfAddress,
+          'proofUrl': proofUrl,
+          'selfieUrl': selfieUrl,
           'fullName': fullName,
-          'nextOfKin': nextOfKin,
-          'nextOfKinPhone': nextOfKinPhone,
-          'nextOfKinRelationship': nextOfKinRelationship,
-          'documentPath': documentImage
-              .path, // In production, upload to Firebase Storage and store URL
+          'status': 'pending',
           'submittedAt': FieldValue.serverTimestamp(),
-          'status': 'pending', // pending, approved, rejected
-        },
-      });
+        }
+      }, SetOptions(merge: true));
 
       return null; // success
     } catch (e) {
@@ -307,7 +366,7 @@ class AuthService {
     }
   }
 
-  // 🔹 Logout user
+  // Logout user
   Future<void> signOut(BuildContext context) async {
     await _auth.signOut();
     Navigator.pushReplacementNamed(context, '/login');

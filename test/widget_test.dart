@@ -1,30 +1,90 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:dispatch_rider_new/main.dart';
+import 'package:dispatch_rider_new/screens/welcome_screen.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const DispatchRiderApp());
+  group('WelcomeScreen', () {
+    testWidgets('renders without error', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: WelcomeScreen(),
+        ),
+      );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+      // Verify key texts exist
+      expect(find.text('Senditt'), findsOneWidget);
+      expect(find.text('Deliveries Made Simple'), findsOneWidget);
+      expect(
+          find.text('Fast, safe, and reliable dispatch service for everyone.'),
+          findsOneWidget);
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    testWidgets('has Login, Sign Up and Rider buttons',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: WelcomeScreen(),
+        ),
+      );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      expect(find.widgetWithText(ElevatedButton, 'Login'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'Sign Up'), findsOneWidget);
+      expect(find.widgetWithText(OutlinedButton, 'Rider'), findsOneWidget);
+    });
+
+    testWidgets('Login button navigates to /login',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: const WelcomeScreen(),
+          routes: {
+            '/login': (_) => const Scaffold(body: Text('Login Page')),
+          },
+        ),
+      );
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Login'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Login Page'), findsOneWidget);
+    });
+
+    testWidgets('Sign Up button navigates to /register',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: const WelcomeScreen(),
+          routes: {
+            '/register': (_) => const Scaffold(body: Text('Register Page')),
+          },
+        ),
+      );
+
+      await tester.tap(find.widgetWithText(TextButton, 'Sign Up'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Register Page'), findsOneWidget);
+    });
+
+    testWidgets('Rider button navigates to /rider',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: const WelcomeScreen(),
+          routes: {
+            '/rider': (_) => const Scaffold(body: Text('Rider Page')),
+          },
+        ),
+      );
+
+      final riderButton = find.widgetWithText(OutlinedButton, 'Rider');
+      await tester.ensureVisible(riderButton);
+      await tester.pump();
+      await tester.tap(riderButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Rider Page'), findsOneWidget);
+    });
   });
 }

@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/notification_service.dart';
 import '../services/delivery_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/notification_service.dart';
+import '../services/delivery_service.dart';
+import '../services/auth_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class RiderDashboardScreen extends StatefulWidget {
   const RiderDashboardScreen({super.key});
@@ -11,12 +17,59 @@ class RiderDashboardScreen extends StatefulWidget {
 }
 
 class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
+  bool _isOnline = false;
+  String? _riderId;
+
   @override
   void initState() {
     super.initState();
+    _riderId = FirebaseAuth.instance.currentUser?.uid;
+    _loadOnlineStatus();
     _checkAuthentication();
     _registerFCMToken();
     _checkForPendingDeliveries();
+  }
+
+  Future<void> _loadOnlineStatus() async {
+    if (_riderId == null) return;
+    DocumentSnapshot doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_riderId!)
+        .get();
+    if (doc.exists) {
+      setState(() {
+        _isOnline = doc['isOnline'] ?? false;
+      });
+    }
+  }
+
+  Future<void> _toggleOnlineStatus() async {
+    if (_riderId == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_riderId!)
+          .update({
+        'isOnline': !_isOnline,
+        'lastLocationUpdate': FieldValue.serverTimestamp(),
+      });
+      setState(() {
+        _isOnline = !_isOnline;
+      });
+    } catch (e) {
+      print('Error toggling status: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    // Auto set offline
+    if (_riderId != null && _isOnline) {
+      FirebaseFirestore.instance.collection('users').doc(_riderId!).update({
+        'isOnline': false,
+      });
+    }
+    super.dispose();
   }
 
   void _checkAuthentication() {
@@ -35,7 +88,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
       if (user != null) {
         String? token = await NotificationService.getFCMToken();
         if (token != null) {
-          await DeliveryService.registerRiderToken(user.uid, token);
+          await DeliveryService.registerToken(user.uid, token);
         }
       }
     } catch (e) {
@@ -61,12 +114,125 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
     }
   }
 
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              AuthService().signOut(context);
+            },
+            child: const Text('Logout', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Rider Dashboard'),
+        title: Row(
+          children: [
+            Text('Rider Dashboard'),
+            SizedBox(width: 8),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _isOnline ? Colors.green : Colors.orange,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.circle, size: 12, color: Colors.white),
+                  SizedBox(width: 4),
+                  Text(_isOnline ? 'Online' : 'Offline',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
         backgroundColor: Colors.green,
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            onSelected: (value) {
+              switch (value) {
+                case 'profile':
+                  Navigator.pushNamed(context, '/profile');
+                  break;
+                case 'contact_us':
+                  Navigator.pushNamed(context, '/contact-us');
+                  break;
+                case 'settings':
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Settings coming soon!')),
+                  );
+                  break;
+                case 'logout':
+                  _showLogoutDialog(context);
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'profile',
+                child: Row(
+                  children: [
+                    Icon(Icons.person, color: Colors.deepPurple),
+                    SizedBox(width: 12),
+                    Text('Profile'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'contact_us',
+                child: Row(
+                  children: [
+                    Icon(Icons.support_agent, color: Colors.green),
+                    SizedBox(width: 12),
+                    Text('Contact Us'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.settings, color: Colors.grey),
+                    SizedBox(width: 12),
+                    Text('Settings'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, color: Colors.red),
+                    SizedBox(width: 12),
+                    Text('Logout', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -136,15 +302,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // Navigate to dispatch order screen to add new delivery
-          Navigator.pushNamed(context, '/dispatch');
-        },
-        backgroundColor: Colors.green,
-        child: const Icon(Icons.add),
-        tooltip: 'Add New Delivery',
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _toggleOnlineStatus,
+        backgroundColor: _isOnline ? Colors.red : Colors.green,
+        icon: Icon(_isOnline ? Icons.power_off : Icons.power),
+        label: Text(_isOnline ? 'Go Offline' : 'Go Online'),
+        tooltip: 'Toggle Online Status',
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
@@ -165,7 +330,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             gradient: LinearGradient(
-              colors: [color.withOpacity(0.1), color.withOpacity(0.05)],
+              colors: [
+                color.withValues(alpha: 0.1),
+                color.withValues(alpha: 0.05)
+              ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),

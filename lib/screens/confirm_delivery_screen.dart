@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/delivery_service.dart';
 import '../utils/pricing_utils.dart';
+import '../services/tenant_service.dart';
 
 class ConfirmDeliveryScreen extends StatefulWidget {
   const ConfirmDeliveryScreen({Key? key}) : super(key: key);
@@ -67,8 +68,11 @@ class _ConfirmDeliveryScreenState extends State<ConfirmDeliveryScreen> {
       }
 
       // Create delivery request and notify riders
+      final companyId = await TenantService.requireCurrentCompanyId();
+
       deliveryId = await DeliveryService.createDeliveryRequest(
         clientId: user.uid,
+        companyId: companyId,
         pickupLocation: pickup,
         destination: destination,
         weight: weight,

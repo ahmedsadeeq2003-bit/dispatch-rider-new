@@ -154,9 +154,10 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
 
   void _updateRiderPosition(LatLng newPosition) {
     // Remove old rider marker
-    _markers.removeWhere((marker) =>
-        marker.child is Icon &&
-        (marker.child as Icon).icon == Icons.directions_bike);
+    _markers.removeWhere((marker) {
+      final child = marker.child;
+      return child is Icon && child.icon == Icons.directions_bike;
+    });
 
     // Add new rider marker
     _markers.add(Marker(
@@ -250,8 +251,11 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.app',
+                urlTemplate:
+                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                subdomains: const ['a'],
+                userAgentPackageName:
+                    'DispatchRider/1.0 (contact: support@dispatchrider.com)',
               ),
               MarkerLayer(markers: _markers),
               PolylineLayer(polylines: _polylines),
