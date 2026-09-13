@@ -6,7 +6,7 @@
 
 -- Extensions -----------------------------------------------------------------
 create extension if not exists "pgcrypto";      -- gen_random_uuid()
--- create extension if not exists "postgis";     -- OPTIONAL: spatial rider matching (see notes)
+create extension if not exists "postgis";       -- spatial rider matching (decided: enabled now)
 
 -- Enums ---------------------------------------------------------------------
 create type user_role          as enum ('client', 'rider', 'admin');
@@ -43,12 +43,20 @@ create table public.profiles (
   last_lat          double precision,
   last_lng          double precision,
   last_location_at  timestamptz,
+  -- generated PostGIS point, kept in sync with last_lat/last_lng — app never
+  -- writes this column directly, so the Flutter client code doesn't change.
+  last_geog         geography(Point, 4326)
+                     generated always as (
+                       case when last_lat is not null and last_lng is not null
+                            then ST_SetSRID(ST_MakePoint(last_lng, last_lat), 4326)::geography
+                       end
+                     ) stored,
   fcm_token         text,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
 create index profiles_company_role_online_idx on public.profiles (company_id, role, is_online);
-create index profiles_last_loc_idx            on public.profiles (last_lat, last_lng);
+create index profiles_last_geog_gix           on public.profiles using gist (last_geog);
 
 -- ---------------------------------------------------------------------------
 -- rider_verifications  (own table, not a JSON blob → cleaner RLS + admin review)
@@ -81,11 +89,20 @@ create table public.deliveries (
   pickup_lng      double precision,
   dropoff_lat     double precision,
   dropoff_lng     double precision,
+  pickup_geog     geography(Point, 4326)
+                   generated always as (
+                     case when pickup_lat is not null and pickup_lng is not null
+                          then ST_SetSRID(ST_MakePoint(pickup_lng, pickup_lat), 4326)::geography
+                     end
+                   ) stored,
   weight_kg       numeric not null,
   package_type    text not null,
   price_naira     numeric not null,
   payment_method  payment_method not null default 'cash',
   status          delivery_status not null default 'pending',
+  -- state-machine bookkeeping (see 0003_transitions.sql)
+  cancel_reason   text,          -- required when a client cancels
+  released_count  integer not null default 0,   -- times a rider handed the job back
   created_at      timestamptz not null default now(),
   accepted_at     timestamptz,
   completed_at    timestamptz,
@@ -95,6 +112,7 @@ create index deliveries_company_status_created_idx on public.deliveries (company
 create index deliveries_rider_status_accepted_idx  on public.deliveries (rider_id, status, accepted_at desc);
 create index deliveries_rider_status_completed_idx on public.deliveries (rider_id, status, completed_at desc);
 create index deliveries_client_created_idx         on public.deliveries (client_id, created_at desc);
+create index deliveries_pickup_geog_gix           on public.deliveries using gist (pickup_geog);
 
 -- ---------------------------------------------------------------------------
 -- delivery_locations  (rider breadcrumb trail; was deliveries/*/locationUpdates)
@@ -193,10 +211,17 @@ alter publication supabase_realtime add table public.delivery_locations;
 
 -- ============================================================================
 -- NOTES
--- - PostGIS: if spatial rider-matching is wanted, add `postgis`, a generated
---   `geography(Point,4326)` column on profiles/deliveries, a GIST index, and let
---   the BACKEND service use ST_DWithin. The Flutter client keeps sending plain
---   lat/lng, so no client change. Deferred out of this baseline for simplicity.
+-- - PostGIS is enabled: `last_geog` / `pickup_geog` are generated columns kept in
+--   sync from plain lat/lng, so the Flutter client is unchanged — it still just
+--   writes last_lat/last_lng and pickup_lat/pickup_lng. The BACKEND service uses
+--   ST_DWithin(a.last_geog, b.pickup_geog, radius_m) + ST_Distance for ranking,
+--   e.g.:
+--     select p.id, p.fcm_token, ST_Distance(p.last_geog, d.pickup_geog) as meters
+--     from profiles p, deliveries d
+--     where d.id = :delivery_id
+--       and p.role = 'rider' and p.is_online and p.company_id = d.company_id
+--       and ST_DWithin(p.last_geog, d.pickup_geog, 15000)  -- 15km
+--     order by meters asc limit 5;
 -- - Firebase `users` doc fields not carried over: `companyCode` (redundant with
 --   company_id), `lastUpdated` (→ updated_at). `verification` map → rider_verifications.
 -- - Firestore auto-id strings become uuids; `firebase_uid` bridges the data load.

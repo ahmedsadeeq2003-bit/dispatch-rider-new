@@ -4,9 +4,10 @@
 Companion to [FORENSIC_AUDIT.md](FORENSIC_AUDIT.md).
 
 Artifacts produced in this phase:
-- `supabase/migrations/0001_schema.sql` — tables, enums, indexes, triggers, functions
+- `supabase/migrations/0001_schema.sql` — tables, enums, indexes, triggers, functions, PostGIS
 - `supabase/migrations/0002_policies.sql` — RLS policies + Storage policies
-- this document — rationale, backend design, auth-migration method, open questions
+- `supabase/migrations/0003_transitions_and_admin.sql` — delivery state-machine trigger + in-app admin role
+- this document — rationale, backend design, auth-migration method, open questions (§7 now resolved)
 
 ---
 
@@ -38,6 +39,13 @@ Artifacts produced in this phase:
 | Web | Ship the Flutter web build to a static host | Cloudflare Pages / Netlify; likely an ops/admin surface |
 | Tenancy | Finish `company_id` isolation during the port | baked into schema + RLS now |
 | Realtime | Firestore `.snapshots()` → Supabase Realtime | 6 subscriptions remapped (§4.3) |
+| Backend language | **Node / TypeScript** | §7 Q1 |
+| Admin | **Real in-app admin role**, not backend-only | new RLS + trigger in `0003`; needs an admin UI in Phase 3 (§7 Q2) |
+| Delivery lifecycle | rider can release; client can cancel with reason | enforced by DB trigger, `0003` (§7 Q3) |
+| Rider phone | shown as-is to the client on a shared delivery | §7 Q4 |
+| Spatial matching | **PostGIS enabled now** | generated `geography` columns, `0001` (§7 Q5) |
+| Supabase region | **`eu-west-2` (London)** | matches existing projects + best real-world latency to Nigeria (§7 Q6) |
+| Prod data volume | pre-launch / near-zero | simplifies Phase 4 — likely no maintenance window, likely skip hash import (§7 Q7) |
 
 ---
 
@@ -66,9 +74,10 @@ Artifacts produced in this phase:
 
 **Indexes** mirror the 3 real Firestore composite indexes plus tenant-scoped variants.
 
-**PostGIS** — deferred. Plain `double precision` lat/lng keeps the Flutter client unchanged. If
-spatial matching is wanted later, add a generated `geography` column + GIST index used only by
-the backend service (§5.2).
+**PostGIS** — enabled (§7 Q5). `profiles.last_geog` / `deliveries.pickup_geog` are `geography`
+columns **generated always as** from the plain `last_lat/last_lng` / `pickup_lat/pickup_lng`
+columns, so the Flutter client keeps writing exactly what it writes today — no client change,
+just better queries available to the backend service (`ST_DWithin`/`ST_Distance`, GIST-indexed).
 
 ---
 
@@ -91,14 +100,16 @@ This is the **corrected** version of `firestore.rules` (audit §4). Every table 
 
 | Actor | select | insert | update |
 |---|---|---|---|
-| Client | own orders | own, into own company, `pending` | own orders (transitions via trigger) |
-| Rider (same company) | own orders + `pending` pool | — | claim a `pending` job (→ `accepted`, `rider_id = self`); progress own assigned job |
+| Client | own orders | own, into own company, `pending` | own orders — cancel (`pending`/`accepted`, reason required) |
+| Rider (same company) | own orders + `pending` pool | — | claim a `pending` job (→ `accepted`); progress own assigned job (`accepted→picked_up→in_transit→completed`); release `accepted→pending` |
 | Rider (other company) | nothing | — | — |
-| Admin | all | — | via backend `service_role` |
+| Admin | all | — | any row (force-cancel, reassign) |
 
-> A `BEFORE UPDATE` trigger enforcing the legal state machine
-> (`pending→accepted→picked_up→in_transit→completed`, plus `→cancelled`) is a **TODO for
-> `0003_transitions.sql`** — flagged for Phase 2 once §7 Q3 is answered.
+The legal state machine — `pending → accepted → picked_up → in_transit → completed`, plus
+`accepted → pending` (release) and `{pending, accepted} → cancelled` (reason required) — is
+enforced by the `enforce_delivery_transition()` `BEFORE UPDATE` trigger in
+`0003_transitions_and_admin.sql`, independent of RLS. Every other transition raises an error,
+regardless of who/what issues the UPDATE (app, admin, or the backend service).
 
 ### 4.3 Realtime subscription mapping
 
@@ -164,7 +175,11 @@ GET  /healthz
 
 ## 6. Auth migration method
 
-**Chosen: transparent scrypt hash import** (no user disruption).
+**Chosen: transparent scrypt hash import** (no user disruption) — **but given §7 Q7 (pre-launch,
+little/no real prod data), a full hash import is likely overkill.** Default to Phase 4 is:
+**re-create the handful of test accounts directly in Supabase Auth** (fresh sign-ups) unless real
+users have signed up by the time Phase 4 starts. Re-check data volume then; if it's grown, fall
+back to the hash-import procedure below.
 
 1. `firebase auth:export users.json --project dispatch-rider-2fb16-b28e7`
 2. From Firebase console → Authentication → ⋮ → **Password hash parameters**, copy
@@ -189,21 +204,19 @@ so the trigger can populate the profile.
 
 ---
 
-## 7. Open questions to resolve before Phase 2
+## 7. Open questions — RESOLVED (2026-09-13)
 
-1. **Backend language** — Node/TS (recommended) or Dart/shelf?
-2. **Admin surface** — is there an admin user/role in-app now, or is verification review done
-   purely by the backend service with `service_role`? Determines whether the `admin` RLS
-   policies matter yet.
-3. **Delivery state machine** — can a rider release an `accepted` job back to `pending`? Can a
-   client cancel after `accepted`? This defines `0003_transitions.sql`.
-4. **Rider phone exposure** — clients currently would see the rider's real phone
-   (`profiles.phone_number` via counterparty policy). OK, or proxy calls?
-5. **PostGIS** — enable now for proper radius matching, or bounding-box + Haversine for v1?
-6. **Region** — existing Supabase projects are `eu-west-2` (London). App users are in Nigeria.
-   `eu-west-2` is a reasonable latency choice; confirm or pick `eu-central-1` etc.
-7. **Data volume** — how many users / deliveries / verification images in prod? Sizes the Phase 4
-   backfill + whether a maintenance window is needed.
+| # | Question | Decision |
+|---|---|---|
+| 1 | Backend language | **Node / TypeScript** |
+| 2 | Admin surface | **Build a real in-app admin role now** — see `0003_transitions_and_admin.sql` (admin RLS write-policies + bootstrap note). Needs an admin screen/app surface in Phase 3. |
+| 3 | Delivery state machine | **Rider can release** an `accepted` job back to `pending` (before pickup); **client can cancel with a required reason** while `pending` or `accepted`. Enforced by the `enforce_delivery_transition()` trigger in `0003_transitions_and_admin.sql` — illegal transitions raise an error no matter who/what writes. |
+| 4 | Rider phone exposure | **Show the real phone number**, as today (counterparty policy already in `0002`). Revisit with a proxy/masking provider later if needed. |
+| 5 | PostGIS | **Enabled now.** `0001_schema.sql` adds the extension + generated `geography` columns (`profiles.last_geog`, `deliveries.pickup_geog`) kept in sync from plain lat/lng — the Flutter client is unchanged. The backend uses `ST_DWithin`/`ST_Distance` for matching (query sketch included in the file). |
+| 6 | Region | **`eu-west-2` (London)** — matches your other two projects, and in practice out-performs Frankfurt for Nigerian traffic since most West African subsea cables (MainOne, WACS, ACE) land/peer through the UK. |
+| 7 | Data volume | **Pre-launch / testing — little to no real production data.** This removes the hardest part of Phase 4: no maintenance window is needed, and since there are effectively no real users yet, **the Auth "hash import" in §6 can likely be skipped in favor of fresh Supabase sign-ups** (re-register the handful of test accounts) unless you want to keep specific test logins. Re-confirm at Phase 4 kickoff in case real users signed up in the meantime. |
+
+All 7 are now closed. Nothing left blocking Phase 2.
 
 ---
 
@@ -227,7 +240,8 @@ verify: row counts match recorded baseline; spot-check 10 deliveries end to end
 
 1. Review & merge `chore/phase-0-cleanup`.
 2. Do the human Phase 0 items in §1 (key rotation, repo private, rules snapshot, backup).
-3. Answer §7.
-4. Then Phase 2: create the Supabase project, apply `0001`+`0002` (+ new `0003` transitions),
-   scaffold the backend repo, and start the `DataService` seam refactor in the Flutter app
-   (safe to begin while still on Firebase).
+3. ~~Answer §7~~ — done (2026-09-13).
+4. **Phase 2** (next): create the Supabase project in `eu-west-2`, apply `0001`→`0003` in order,
+   scaffold the Node/TS backend repo, design the in-app admin surface (new requirement from §7 Q2),
+   and start the `DataService` seam refactor in the Flutter app (safe to begin while still on
+   Firebase).
