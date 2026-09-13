@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../widgets/custom_textfield.dart';
 
 /// Minimal placeholder UI.
 ///
@@ -34,36 +36,35 @@ class _CompanySetupScreenState extends State<CompanySetupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Company Setup'),
-      ),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text('Company Setup')),
       body: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Enter your logistics company code to join.',
-              style: TextStyle(fontSize: 16, color: Colors.black87),
+              style: AppText.body,
             ),
-            const SizedBox(height: 16),
-            TextField(
+            const SizedBox(height: AppSpacing.md),
+            CustomTextField(
               controller: _companyCodeController,
-              decoration: const InputDecoration(
-                labelText: 'Company code',
-                border: OutlineInputBorder(),
-              ),
+              label: 'Company code',
+              icon: Icons.qr_code_rounded,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: AppSpacing.lg),
             SizedBox(
               width: double.infinity,
+              height: 55,
               child: ElevatedButton(
                 onPressed: _loading ? null : _joinCompany,
                 child: _loading
                     ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Text('Join'),
               ),

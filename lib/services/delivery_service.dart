@@ -1,10 +1,9 @@
-import 'dart:math';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'notification_service.dart';
 import 'location_tracking_service.dart';
 
 class DeliveryService {
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final SupabaseClient _client = Supabase.instance.client;
 
   // Create a new delivery request
   static Future<String> createDeliveryRequest({
@@ -15,310 +14,221 @@ class DeliveryService {
     required String packageType,
     required double price,
     required String paymentMethod,
-    required String companyId,
     double? pickupLat,
     double? pickupLon,
     double? destLat,
     double? destLon,
   }) async {
     try {
-      // Create delivery document
-      DocumentReference deliveryRef =
-          await _firestore.collection('deliveries').add({
-        'clientId': clientId,
-        'pickupLocation': pickupLocation,
-        'destination': destination,
-        'weight': weight,
-        'packageType': packageType,
-        'price': price,
-        'pickupLat': pickupLat,
-        'pickupLon': pickupLon,
-        'destLat': destLat,
-        'destLon': destLon,
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-        'riderId': null,
-      });
+      final profile = await _client
+          .from('profiles')
+          .select('company_id')
+          .eq('id', clientId)
+          .single();
+      final companyId = profile['company_id'] as String?;
+      if (companyId == null) {
+        throw Exception('Your account is not linked to a company yet.');
+      }
+
+      final row = await _client
+          .from('deliveries')
+          .insert({
+            'client_id': clientId,
+            'company_id': companyId,
+            'pickup_address': pickupLocation,
+            'dropoff_address': destination,
+            'weight_kg': weight,
+            'package_type': packageType,
+            'price_naira': price,
+            'payment_method': paymentMethod,
+            'pickup_lat': pickupLat,
+            'pickup_lng': pickupLon,
+            'dropoff_lat': destLat,
+            'dropoff_lng': destLon,
+          })
+          .select('id')
+          .single();
+
+      final deliveryId = row['id'] as String;
 
       // Send notification to nearest rider
-      await _notifyRidersOfNewDelivery(
-          deliveryRef.id, pickupLocation, destination, pickupLat, pickupLon);
+      await _notifyRidersOfNewDelivery(deliveryId, pickupLocation, destination);
 
-      return deliveryRef.id;
+      return deliveryId;
     } catch (e) {
       print('Error creating delivery request: $e');
-      throw e;
+      rethrow;
     }
   }
 
-  // Smart notify: online riders within radius, prefer near/high-rated
+  // Find and notify nearest rider about new delivery request.
+  //
+  // NOTE: this is client-side and best-effort (it only reaches riders whose
+  // app is open right now, via a LOCAL notification on THIS device — see
+  // MIGRATION_PHASE1_DESIGN.md §5). Real push fan-out to other riders'
+  // devices requires the backend service (Phase 3 follow-up), which will
+  // listen for `deliveries` inserts via a Database Webhook and call FCM
+  // directly using ST_DWithin/ST_Distance against profiles.last_geog.
   static Future<void> _notifyRidersOfNewDelivery(
-      String deliveryId,
-      String pickup,
-      String destination,
-      double? pickupLat,
-      double? pickupLon) async {
+      String deliveryId, String pickup, String destination) async {
     try {
-      if (pickupLat == null || pickupLon == null) {
-        await _notifyAllOnlineRiders(deliveryId, pickup, destination);
-        return;
-      }
-
-      // Get online riders with location
-      QuerySnapshot ridersSnapshot = await _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'rider')
-          .where('isOnline', isEqualTo: true)
-          .where('latitude', isNotEqualTo: null)
-          .where('longitude', isNotEqualTo: null)
-          .get();
-
-      List<Map<String, dynamic>> candidates = [];
-      for (var doc in ridersSnapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        final lat = data['latitude'] as double?;
-        final lon = data['longitude'] as double?;
-        final rating = (data['rating'] ?? 5.0) as double;
-        if (lat != null && lon != null) {
-          final distance = _calculateDistance(pickupLat, pickupLon, lat, lon);
-          candidates.add({
-            'id': doc.id,
-            'distance': distance,
-            'rating': rating,
-            'fcmToken': data['fcmToken'] ?? '',
-          });
-        }
-      }
-
-      // Filter/sort by radius + score
-      List<Map<String, dynamic>> topCandidates = [];
-      for (final radius in [10.0, 15.0]) {
-        topCandidates =
-            candidates.where((c) => c['distance'] <= radius).toList()
-              ..sort((a, b) {
-                final scoreA = a['rating'] - a['distance'] / 10;
-                final scoreB = b['rating'] - b['distance'] / 10;
-                return scoreB.compareTo(scoreA); // desc rating, asc distance
-              });
-        if (topCandidates.length >= 3) break;
-      }
-
-      final tokens = topCandidates
-          .take(5)
-          .where((c) => c['fcmToken'].isNotEmpty)
-          .map((c) => c['fcmToken'] as String)
-          .toList();
-      if (tokens.isNotEmpty) {
-        await _sendNotificationToRiders(
-            tokens, deliveryId, pickup, destination);
-      } else {
-        await _notifyAllOnlineRiders(deliveryId, pickup, destination);
-      }
+      await NotificationService.showNewDeliveryNotification(
+        deliveryId: deliveryId,
+        pickupLocation: pickup,
+        destination: destination,
+      );
     } catch (e) {
       print('Error notifying riders: $e');
-      await _notifyAllOnlineRiders(deliveryId, pickup, destination);
     }
-  }
-
-  // Fallback: Notify all online riders
-  static Future<void> _notifyAllOnlineRiders(
-      String deliveryId, String pickup, String destination) async {
-    try {
-      QuerySnapshot ridersSnapshot = await _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'rider')
-          .where('isOnline', isEqualTo: true)
-          .get();
-
-      List<String> riderTokens = [];
-      for (var doc in ridersSnapshot.docs) {
-        String? token = doc['fcmToken'];
-        if (token != null && token.isNotEmpty) {
-          riderTokens.add(token);
-        }
-      }
-
-      if (riderTokens.isNotEmpty) {
-        await _sendNotificationToRiders(
-            riderTokens, deliveryId, pickup, destination);
-      }
-    } catch (e) {
-      print('Error notifying all online riders: $e');
-    }
-  }
-
-  // Calculate distance between two coordinates using Haversine formula
-  static double _calculateDistance(
-      double lat1, double lon1, double lat2, double lon2) {
-    const double earthRadius = 6371; // Earth's radius in kilometers
-
-    final double dLat = _degreesToRadians(lat2 - lat1);
-    final double dLon = _degreesToRadians(lon2 - lon1);
-
-    final double a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(_degreesToRadians(lat1)) *
-            cos(_degreesToRadians(lat2)) *
-            sin(dLon / 2) *
-            sin(dLon / 2);
-
-    final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return earthRadius * c;
-  }
-
-  static double _degreesToRadians(double degrees) {
-    return degrees * pi / 180;
-  }
-
-  // Send FCM notification to riders
-  static Future<void> _sendNotificationToRiders(List<String> tokens,
-      String deliveryId, String pickup, String destination) async {
-    // Note: In a real implementation, you would send this from your backend server
-    // For now, we'll show a local notification to simulate the notification
-    // In production, use Firebase Cloud Functions or your backend to send FCM messages
-
-    print(
-        'Sending notification to ${tokens.length} riders for delivery $deliveryId');
-
-    // Show local notification for demo purposes
-    // In production, this would be sent server-side via FCM
-    await NotificationService.showNewDeliveryNotification(
-      deliveryId: deliveryId,
-      pickupLocation: pickup,
-      destination: destination,
-    );
   }
 
   // Accept delivery (rider accepts a delivery request)
   static Future<void> acceptDelivery(String deliveryId, String riderId) async {
     try {
-      await _firestore.collection('deliveries').doc(deliveryId).update({
-        'riderId': riderId,
+      await _client.from('deliveries').update({
+        'rider_id': riderId,
         'status': 'accepted',
-        'acceptedAt': FieldValue.serverTimestamp(),
-      });
+        // accepted_at is set server-side by enforce_delivery_transition()
+      }).eq('id', deliveryId);
 
       // Start location tracking for this delivery
       await LocationTrackingService().startTracking(deliveryId);
 
-      // Notify client that delivery was accepted
-      await _notifyClientDeliveryAccepted(deliveryId);
+      // Notify client that delivery was accepted (see NOTE above — local/
+      // best-effort until the backend service exists)
+      print('Delivery $deliveryId accepted by rider $riderId');
     } catch (e) {
       print('Error accepting delivery: $e');
-      throw e;
+      rethrow;
     }
   }
 
-  // Notify client that delivery was accepted
-  static Future<void> _notifyClientDeliveryAccepted(String deliveryId) async {
-    try {
-      DocumentSnapshot deliveryDoc =
-          await _firestore.collection('deliveries').doc(deliveryId).get();
-      String clientId = deliveryDoc['clientId'];
-
-      // Get client FCM token from users collection
-      DocumentSnapshot clientDoc =
-          await _firestore.collection('users').doc(clientId).get();
-      String? clientToken = clientDoc['fcmToken'];
-
-      if (clientToken != null && clientToken.isNotEmpty) {
-        // Send notification to client
-        await _sendNotificationToClient(clientToken, deliveryId);
-      }
-    } catch (e) {
-      print('Error notifying client: $e');
-    }
-  }
-
-  // Send notification to client
-  static Future<void> _sendNotificationToClient(
-      String token, String deliveryId) async {
-    // Similar to rider notification, this should be done server-side in production
-    print('Sending notification to client for delivery $deliveryId');
-  }
-
-  // Get pending deliveries for riders
-  static Stream<QuerySnapshot> getPendingDeliveries() {
-    return _firestore
-        .collection('deliveries')
-        .where('status', isEqualTo: 'pending')
-        .orderBy('createdAt', descending: true)
-        .snapshots();
+  // Get pending deliveries for riders (same-company pool — enforced by RLS)
+  static Stream<List<Map<String, dynamic>>> getPendingDeliveries() {
+    return _client
+        .from('deliveries')
+        .stream(primaryKey: ['id'])
+        .eq('status', 'pending')
+        .order('created_at', ascending: false);
   }
 
   // Get active deliveries for a rider
-  static Stream<QuerySnapshot> getActiveDeliveries(String uid) {
-    return _firestore
-        .collection('deliveries')
-        .where('riderId', isEqualTo: uid)
-        .where('status', isEqualTo: 'accepted')
-        .orderBy('acceptedAt', descending: true)
-        .snapshots();
+  static Stream<List<Map<String, dynamic>>> getActiveDeliveries(
+      String riderId) {
+    return _client
+        .from('deliveries')
+        .stream(primaryKey: ['id'])
+        .eq('rider_id', riderId)
+        .map((rows) => rows.where((r) => r['status'] == 'accepted').toList()
+          ..sort((a, b) => (b['accepted_at'] as String? ?? '')
+              .compareTo(a['accepted_at'] as String? ?? '')));
   }
 
-  // Get client's deliveries (active + completed)
-  static Stream<QuerySnapshot> getClientDeliveries(String clientId) {
-    return _firestore
-        .collection('deliveries')
-        .where('clientId', isEqualTo: clientId)
-        .orderBy('createdAt', descending: true)
-        .snapshots();
+  // Get client's deliveries (all statuses)
+  static Stream<List<Map<String, dynamic>>> getClientDeliveries(
+      String clientId) {
+    return _client
+        .from('deliveries')
+        .stream(primaryKey: ['id'])
+        .eq('client_id', clientId)
+        .order('created_at', ascending: false);
   }
 
   // Get completed deliveries for a rider
-  static Stream<QuerySnapshot> getCompletedDeliveries(String riderId) {
-    return _firestore
-        .collection('deliveries')
-        .where('riderId', isEqualTo: riderId)
-        .where('status', isEqualTo: 'completed')
-        .orderBy('completedAt', descending: true)
-        .snapshots();
+  static Stream<List<Map<String, dynamic>>> getCompletedDeliveries(
+      String riderId) {
+    return _client
+        .from('deliveries')
+        .stream(primaryKey: ['id'])
+        .eq('rider_id', riderId)
+        .map((rows) => rows.where((r) => r['status'] == 'completed').toList()
+          ..sort((a, b) => (b['completed_at'] as String? ?? '')
+              .compareTo(a['completed_at'] as String? ?? '')));
+  }
+
+  // Watch a single delivery (used while waiting for a rider to accept)
+  static Stream<Map<String, dynamic>?> getDelivery(String deliveryId) {
+    return _client
+        .from('deliveries')
+        .stream(primaryKey: ['id'])
+        .eq('id', deliveryId)
+        .map((rows) => rows.isEmpty ? null : rows.first);
   }
 
   // Update delivery status
   static Future<void> updateDeliveryStatus(
       String deliveryId, String status) async {
     try {
-      Map<String, dynamic> updateData = {
-        'status': status,
-      };
-
-      if (status == 'completed') {
-        updateData['completedAt'] = FieldValue.serverTimestamp();
-      }
-
-      await _firestore
-          .collection('deliveries')
-          .doc(deliveryId)
-          .update(updateData);
+      await _client
+          .from('deliveries')
+          .update({'status': status})
+          .eq('id', deliveryId);
+      // completed_at/cancelled_at/accepted_at are all set server-side by
+      // enforce_delivery_transition().
     } catch (e) {
       print('Error updating delivery status: $e');
-      throw e;
+      rethrow;
     }
   }
 
-  // Update rider rating after completion
+  // Cancel a delivery (client-initiated; a reason is required by the DB trigger)
+  static Future<void> cancelDelivery(String deliveryId, String reason) async {
+    try {
+      await _client.from('deliveries').update({
+        'status': 'cancelled',
+        'cancel_reason': reason,
+      }).eq('id', deliveryId);
+    } catch (e) {
+      print('Error cancelling delivery: $e');
+      rethrow;
+    }
+  }
+
+  // Rider releases an accepted job back to the pending pool
+  static Future<void> releaseDelivery(String deliveryId) async {
+    try {
+      await _client.from('deliveries').update({
+        'status': 'pending',
+        'rider_id': null,
+      }).eq('id', deliveryId);
+    } catch (e) {
+      print('Error releasing delivery: $e');
+      rethrow;
+    }
+  }
+
+  // Update rider rating after completion.
+  // NOTE: this calls a backend-only RPC (service_role) — see
+  // apply_rider_rating() in supabase/migrations. It is not directly callable
+  // by end users, so this method is a placeholder until the backend service
+  // exists to receive the rating and call the RPC itself.
   static Future<void> updateRiderRating(String riderId, double rating) async {
+    print(
+        'Rating submission for rider $riderId ($rating) — requires the backend service (not yet built) to call apply_rider_rating().');
+  }
+
+  // Register rider FCM token
+  static Future<void> registerRiderToken(String riderId, String token) async {
     try {
-      await _firestore.collection('users').doc(riderId).update({
-        'totalRatings': FieldValue.increment(rating),
-        'totalDeliveries': FieldValue.increment(1),
-      });
-      // Recalc rating via cloud function or client-side avg
+      await _client.from('profiles').update({
+        'fcm_token': token,
+      }).eq('id', riderId);
     } catch (e) {
-      print('Error updating rider rating: $e');
+      print('Error registering rider token: $e');
+      rethrow;
     }
   }
 
-  // Register rider FCM token (updates users/{uid})
-  static Future<void> registerToken(String uid, String token) async {
+  // Register client FCM token
+  static Future<void> registerClientToken(
+      String clientId, String token) async {
     try {
-      await _firestore.collection('users').doc(uid).set({
-        'fcmToken': token,
-        'lastUpdated': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _client.from('profiles').update({
+        'fcm_token': token,
+      }).eq('id', clientId);
     } catch (e) {
-      print('Error registering FCM token: $e');
-      throw e;
+      print('Error registering client token: $e');
+      rethrow;
     }
   }
 }

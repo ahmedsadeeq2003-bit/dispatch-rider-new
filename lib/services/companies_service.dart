@@ -1,12 +1,14 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CompaniesService {
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final SupabaseClient _client = Supabase.instance.client;
 
   /// Fetch company settings/branding for UI (optional for now).
   static Future<Map<String, dynamic>?> getCompanyById(String companyId) async {
-    final doc = await _firestore.collection('companies').doc(companyId).get();
-    if (!doc.exists) return null;
-    return doc.data();
+    return await _client
+        .from('companies')
+        .select()
+        .eq('id', companyId)
+        .maybeSingle();
   }
 }

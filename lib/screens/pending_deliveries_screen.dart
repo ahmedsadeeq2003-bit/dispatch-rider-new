@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/delivery_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/status_badge.dart';
 
 class PendingDeliveriesScreen extends StatefulWidget {
   const PendingDeliveriesScreen({super.key});
@@ -15,215 +17,197 @@ class _PendingDeliveriesScreenState extends State<PendingDeliveriesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pending Deliveries'),
-        backgroundColor: Colors.orange,
-      ),
-      body: StreamBuilder<QuerySnapshot>(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text('Pending Deliveries')),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: DeliveryService.getPendingDeliveries(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return Center(
+              child: Text('Error: ${snapshot.error}', style: AppText.bodyMuted),
+            );
           }
 
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            );
           }
 
-          final deliveries = snapshot.data?.docs ?? [];
+          final deliveries = snapshot.data ?? [];
 
           if (deliveries.isEmpty) {
-            return const Center(
-              child: Text(
-                'No pending deliveries at the moment.',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              ),
+            return const EmptyState(
+              icon: Icons.pending_actions_rounded,
+              title: 'No pending deliveries',
+              subtitle: 'New delivery requests will show up here',
+              color: AppColors.warning,
             );
           }
 
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.md),
             itemCount: deliveries.length,
             itemBuilder: (context, index) {
-              final delivery = deliveries[index];
-              final data = delivery.data() as Map<String, dynamic>;
+              final data = deliveries[index];
 
-              return Card(
-                margin: const EdgeInsets.only(bottom: 16),
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Order ${delivery.id}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade100,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Text(
-                              'Pending',
-                              style: TextStyle(
-                                color: Colors.orange,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          const Icon(Icons.location_on,
-                              color: Colors.green, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Pickup: ${data['pickupLocation']}',
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(Icons.flag, color: Colors.red, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Destination: ${data['destination']}',
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Text(
-                            '${data['weight']} kg',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.purple,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Text(
-                            '${data['packageType']}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '₦${data['price']}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              ElevatedButton(
-                                onPressed: () async {
-                                  try {
-                                    final currentUser =
-                                        FirebaseAuth.instance.currentUser;
-                                    if (currentUser == null) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Please log in to accept deliveries'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
-                                      return;
-                                    }
-
-                                    // Accept delivery logic
-                                    await DeliveryService.acceptDelivery(
-                                        delivery.id, currentUser.uid);
-
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                            'Accepted delivery ${delivery.id}'),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    );
-                                    // Navigate to active deliveries
-                                    Navigator.pushNamed(
-                                        context, '/activedeliveries');
-                                  } catch (e) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                            'Error accepting delivery: $e'),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
-                                ),
-                                child: const Text('Accept'),
-                              ),
-                              const SizedBox(width: 8),
-                              OutlinedButton(
-                                onPressed: () {
-                                  // Decline delivery logic
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          'Declined delivery ${delivery.id}'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Colors.red),
-                                  foregroundColor: Colors.red,
-                                ),
-                                child: const Text('Decline'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+              return _PendingDeliveryCard(
+                deliveryId: data['id'] as String,
+                data: data,
               );
             },
           );
         },
+      ),
+    );
+  }
+}
+
+class _PendingDeliveryCard extends StatelessWidget {
+  final String deliveryId;
+  final Map<String, dynamic> data;
+
+  const _PendingDeliveryCard({required this.deliveryId, required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(10),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Order $deliveryId', style: AppText.h3),
+              const StatusBadge(status: 'pending'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              const Icon(Icons.circle, size: 10, color: AppColors.accentGreen),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text('Pickup: ${data['pickup_address']}',
+                    style: AppText.body),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Row(
+            children: [
+              const Icon(Icons.location_on_rounded,
+                  size: 18, color: AppColors.danger),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text('Destination: ${data['dropoff_address']}',
+                    style: AppText.body),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Text('${data['weight_kg']} kg',
+                  style: AppText.bodyMuted.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.accentPurple)),
+              const SizedBox(width: AppSpacing.md),
+              Text('${data['package_type']}',
+                  style: AppText.bodyMuted.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.warning)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('₦${data['price_naira']}',
+                  style: AppText.h3.copyWith(color: AppColors.success)),
+              Row(
+                children: [
+                  ElevatedButton(
+                    onPressed: () async {
+                      try {
+                        final currentUser =
+                            Supabase.instance.client.auth.currentUser;
+                        if (currentUser == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content:
+                                  Text('Please log in to accept deliveries'),
+                              backgroundColor: AppColors.danger,
+                            ),
+                          );
+                          return;
+                        }
+
+                        // Accept delivery logic
+                        await DeliveryService.acceptDelivery(
+                            deliveryId, currentUser.id);
+
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Accepted delivery $deliveryId'),
+                            backgroundColor: AppColors.success,
+                          ),
+                        );
+                        // Navigate to active deliveries
+                        Navigator.pushNamed(context, '/activedeliveries');
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error accepting delivery: $e'),
+                            backgroundColor: AppColors.danger,
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.success,
+                      minimumSize: const Size(0, 40),
+                    ),
+                    child: const Text('Accept'),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  OutlinedButton(
+                    onPressed: () {
+                      // Decline delivery logic
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Declined delivery $deliveryId'),
+                          backgroundColor: AppColors.danger,
+                        ),
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppColors.danger),
+                      foregroundColor: AppColors.danger,
+                      minimumSize: const Size(0, 40),
+                    ),
+                    child: const Text('Decline'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

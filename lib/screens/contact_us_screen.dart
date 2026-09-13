@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../theme/app_theme.dart';
 
 class ContactUsScreen extends StatelessWidget {
   const ContactUsScreen({super.key});
@@ -29,118 +30,97 @@ class ContactUsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        title: const Text('Contact Us'),
-        centerTitle: true,
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
-      ),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text('Contact Us')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header
-            const Text(
-              'We\'d love to hear from you!',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
+            Text("We'd love to hear from you!", style: AppText.h1),
+            const SizedBox(height: AppSpacing.xs),
             Text(
               'Reach out to us for support, feedback, or business inquiries.',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ),
+              style: AppText.bodyMuted,
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: AppSpacing.xl),
 
             // Contact Options
             _buildContactCard(
               context,
-              icon: Icons.email,
+              icon: Icons.email_rounded,
               title: 'Email Us',
               subtitle: 'support@senditt.com',
-              color: Colors.blue,
+              color: AppColors.info,
               onTap: _launchEmail,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.sm),
             _buildContactCard(
               context,
-              icon: Icons.phone,
+              icon: Icons.phone_rounded,
               title: 'Call Us',
               subtitle: '+234 801 234 5678',
-              color: Colors.green,
+              color: AppColors.success,
               onTap: _launchPhone,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.sm),
             _buildContactCard(
               context,
-              icon: Icons.chat,
+              icon: Icons.chat_rounded,
               title: 'WhatsApp',
               subtitle: 'Chat with us on WhatsApp',
-              color: Colors.teal,
+              color: AppColors.tertiary,
               onTap: _launchWhatsApp,
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: AppSpacing.xl),
 
             // Business Hours
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(8),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.access_time, color: Colors.deepPurple),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Business Hours',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _buildHoursRow('Monday - Friday', '8:00 AM - 6:00 PM'),
-                    _buildHoursRow('Saturday', '9:00 AM - 4:00 PM'),
-                    _buildHoursRow('Sunday', 'Closed'),
-                  ],
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time_rounded,
+                          color: AppColors.primary),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text('Business Hours', style: AppText.h3),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _buildHoursRow('Monday - Friday', '8:00 AM - 6:00 PM'),
+                  _buildHoursRow('Saturday', '9:00 AM - 4:00 PM'),
+                  _buildHoursRow('Sunday', 'Closed'),
+                ],
               ),
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: AppSpacing.xl),
 
             // FAQ Button
             SizedBox(
               width: double.infinity,
+              height: 55,
               child: OutlinedButton.icon(
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('FAQ section coming soon!')),
                   );
                 },
-                icon: const Icon(Icons.help_outline),
+                icon: const Icon(Icons.help_outline_rounded),
                 label: const Text('Frequently Asked Questions'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.deepPurple,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(color: Colors.deepPurple),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
               ),
             ),
           ],
@@ -157,49 +137,48 @@ class ContactUsScreen extends StatelessWidget {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      elevation: 0,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        child: Container(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withAlpha(8),
+                blurRadius: 12,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  color: color.withAlpha(24),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
                 ),
                 child: Icon(icon, color: color, size: 28),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    Text(title, style: AppText.h3),
                     const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
+                    Text(subtitle, style: AppText.bodyMuted),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios,
-                  size: 16, color: Colors.grey.shade400),
+              const Icon(Icons.arrow_forward_ios_rounded,
+                  size: 16, color: AppColors.textSecondary),
             ],
           ),
         ),
@@ -209,21 +188,12 @@ class ContactUsScreen extends StatelessWidget {
 
   Widget _buildHoursRow(String day, String hours) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            day,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
-          ),
-          Text(
-            hours,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text(day, style: AppText.bodyMuted),
+          Text(hours, style: AppText.body.copyWith(fontWeight: FontWeight.w700)),
         ],
       ),
     );

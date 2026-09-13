@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/custom_textfield.dart';
 import 'package:lottie/lottie.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -22,108 +24,85 @@ class _LoginScreenState extends State<LoginScreen> {
       password: _passwordController.text.trim(),
       context: context,
     );
+    if (!mounted) return;
     setState(() => _loading = false);
 
-    if (error != null) {
+    if (error == null) {
+      Navigator.pushReplacementNamed(context, '/rider');
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error)),
       );
     }
-    // Navigation handled by AuthService
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const SizedBox(height: 60),
 
-            // 🎞️ Lottie Animation
             Lottie.asset('assets/animations/Delivery Riding.json', height: 180),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.md),
 
-            const Text(
-              "Welcome Back!",
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              "Login to continue sending packages easily.",
+            Text('Welcome Back!', style: AppText.h1),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Login to continue sending packages easily.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
+              style: AppText.bodyMuted,
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: AppSpacing.xl),
 
-            // 📧 Email
-            TextField(
+            CustomTextField(
               controller: _emailController,
-              decoration: InputDecoration(
-                labelText: "Email",
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                prefixIcon: const Icon(Icons.email),
-              ),
+              label: 'Email',
+              icon: Icons.email_outlined,
+              keyboardType: TextInputType.emailAddress,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.md),
 
-            // 🔒 Password
-            TextField(
+            CustomTextField(
               controller: _passwordController,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: "Password",
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                prefixIcon: const Icon(Icons.lock),
+              label: 'Password',
+              icon: Icons.lock_outline,
+              isPassword: true,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+
+            SizedBox(
+              width: double.infinity,
+              height: 55,
+              child: ElevatedButton(
+                onPressed: _loading ? null : _login,
+                child: _loading
+                    ? const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Login'),
               ),
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: AppSpacing.md),
 
-            // 🚀 Login Button
-            _loading
-                ? const CircularProgressIndicator()
-                : SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: ElevatedButton(
-                      onPressed: _login,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueAccent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        "Login",
-                        style: TextStyle(fontSize: 18, color: Colors.white),
-                      ),
-                    ),
-                  ),
-            const SizedBox(height: 20),
-
-            // 🔁 Register Redirect
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text("Don’t have an account? "),
+                Text("Don't have an account? ", style: AppText.bodyMuted),
                 GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/register'),
-                  child: const Text(
-                    "Register",
-                    style: TextStyle(
-                      color: Colors.blueAccent,
-                      fontWeight: FontWeight.bold,
+                  child: Text(
+                    'Register',
+                    style: AppText.body.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),

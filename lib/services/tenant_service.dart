@@ -1,31 +1,28 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Minimal tenant context provider.
 ///
 /// Assumption for this repo:
-/// - `users/{uid}` contains `companyId`.
-/// - `deliveries/{deliveryId}` contains `companyId`.
+/// - `profiles.id` (== auth uid) has `company_id`.
+/// - `deliveries.company_id` scopes tenant isolation (enforced by RLS).
 class TenantService {
-  static final FirebaseAuth _auth = FirebaseAuth.instance;
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final SupabaseClient _client = Supabase.instance.client;
 
   /// Returns the currently signed-in user's companyId.
   static Future<String?> getCurrentCompanyId() async {
-    final uid = _auth.currentUser?.uid;
+    final uid = _client.auth.currentUser?.id;
     if (uid == null) return null;
 
-    final doc = await _firestore.collection('users').doc(uid).get();
-    if (!doc.exists) return null;
+    final profile = await _client
+        .from('profiles')
+        .select('company_id')
+        .eq('id', uid)
+        .maybeSingle();
 
-    final data = doc.data();
-    if (data == null) return null;
-    return data['companyId'] as String?;
+    return profile?['company_id'] as String?;
   }
 
-  /// Returns the currently signed-in user's companyId (cached once per call site).
-  ///
-  /// Note: keep this simple; a more advanced approach would cache in memory.
+  /// Returns the currently signed-in user's companyId, throwing if unset.
   static Future<String> requireCurrentCompanyId() async {
     final companyId = await getCurrentCompanyId();
     if (companyId == null || companyId.trim().isEmpty) {

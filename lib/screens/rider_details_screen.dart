@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class RiderDetailsScreen extends StatelessWidget {
   const RiderDetailsScreen({super.key});
@@ -18,45 +19,41 @@ class RiderDetailsScreen extends StatelessWidget {
     final weight = args["weight"];
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Rider Details"),
-        backgroundColor: Colors.deepPurple,
-      ),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text('Rider Details')),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           children: [
             // RIDER CARD
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
-                color: Colors.deepPurple.shade50,
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.secondary.withAlpha(20),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
               child: Row(
                 children: [
                   const CircleAvatar(
                     radius: 30,
-                    backgroundColor: Colors.deepPurple,
+                    backgroundColor: AppColors.secondary,
                     child: Icon(Icons.person, color: Colors.white, size: 30),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: AppSpacing.md),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(riderName,
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold)),
-                      Text("Rating: ⭐ $riderRating"),
-                      Text("Bike: $riderBike"),
-                      Text("ETA: $eta"),
+                      Text(riderName, style: AppText.h3),
+                      Text("Rating: ⭐ $riderRating", style: AppText.bodyMuted),
+                      Text("Bike: $riderBike", style: AppText.bodyMuted),
+                      Text("ETA: $eta", style: AppText.bodyMuted),
                     ],
                   ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.lg),
 
             // TRIP INFO
             Align(
@@ -64,25 +61,21 @@ class RiderDetailsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Pickup:",
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(pickup),
-                  const SizedBox(height: 12),
-                  const Text("Destination:",
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(destination),
-                  const SizedBox(height: 12),
-                  const Text("Package:",
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(package),
-                  const SizedBox(height: 12),
-                  const Text("Weight:",
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text("${weight} kg"),
-                  const SizedBox(height: 12),
-                  const Text("Price:",
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text("₦${price.toStringAsFixed(0)}"),
+                  Text("Pickup:", style: AppText.h3),
+                  Text(pickup, style: AppText.body),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text("Destination:", style: AppText.h3),
+                  Text(destination, style: AppText.body),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text("Package:", style: AppText.h3),
+                  Text(package, style: AppText.body),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text("Weight:", style: AppText.h3),
+                  Text("$weight kg", style: AppText.body),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text("Price:", style: AppText.h3),
+                  Text("₦${price.toStringAsFixed(0)}",
+                      style: AppText.body.copyWith(color: AppColors.success)),
                 ],
               ),
             ),
@@ -91,20 +84,17 @@ class RiderDetailsScreen extends StatelessWidget {
 
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepPurple,
-                foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 50),
               ),
               onPressed: () {},
               child: const Text("Start Delivery"),
             ),
 
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpacing.sm),
 
             OutlinedButton(
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
-                side: const BorderSide(color: Colors.deepPurple),
               ),
               onPressed: () {
                 Navigator.pop(context);

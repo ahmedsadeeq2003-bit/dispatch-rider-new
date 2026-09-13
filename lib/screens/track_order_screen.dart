@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/location_tracking_service.dart';
+import '../theme/app_theme.dart';
 
 class TrackOrderScreen extends StatefulWidget {
   // Optionally accept pickup/destination coords from previous screen:
@@ -45,9 +45,9 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
   final List<Marker> _markers = [];
   final List<Polyline> _polylines = [];
 
-  // Rider state (real-time from Firestore)
+  // Rider state (real-time from Supabase)
   LatLng? _riderPosition;
-  StreamSubscription<QuerySnapshot>? _locationSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _locationSubscription;
 
   // Timeline state
   OrderStep _currentStep = OrderStep.accepted;
@@ -89,18 +89,18 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
     _markers.clear();
     _markers.add(Marker(
       point: pickup,
-      child: const Icon(Icons.location_on, color: Colors.green, size: 40),
+      child: const Icon(Icons.location_on, color: AppColors.accentGreen, size: 40),
     ));
     _markers.add(Marker(
       point: dest,
-      child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+      child: const Icon(Icons.location_on, color: AppColors.danger, size: 40),
     ));
 
     // Rider marker will be added when location data is received
     if (_riderPosition != null) {
       _markers.add(Marker(
         point: _riderPosition!,
-        child: const Icon(Icons.directions_bike, color: Colors.blue, size: 40),
+        child: const Icon(Icons.directions_bike, color: AppColors.primary, size: 40),
       ));
     }
 
@@ -108,29 +108,26 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
     _polylines.clear();
     _polylines.add(Polyline(
       points: [pickup, dest],
-      color: Colors.deepPurple,
+      color: AppColors.primary,
       strokeWidth: 3,
     ));
   }
 
   void _startLocationTracking() {
-    // Listen to real-time location updates from Firestore
+    // Listen to real-time location updates from Supabase
     _locationSubscription = LocationTrackingService()
         .getLocationUpdates(widget.orderId)
-        .listen((snapshot) {
+        .listen((rows) {
       if (!mounted) return;
 
-      if (snapshot.docs.isNotEmpty) {
-        final latestLocation =
-            snapshot.docs.first.data() as Map<String, dynamic>?;
-        if (latestLocation != null) {
-          final lat = latestLocation['latitude'] as double?;
-          final lng = latestLocation['longitude'] as double?;
+      if (rows.isNotEmpty) {
+        final latestLocation = rows.first;
+        final lat = (latestLocation['lat'] as num?)?.toDouble();
+        final lng = (latestLocation['lng'] as num?)?.toDouble();
 
-          if (lat != null && lng != null) {
-            final newPosition = LatLng(lat, lng);
-            _updateRiderPosition(newPosition);
-          }
+        if (lat != null && lng != null) {
+          final newPosition = LatLng(lat, lng);
+          _updateRiderPosition(newPosition);
         }
       }
     });
@@ -143,8 +140,8 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
     final locationData =
         await LocationTrackingService().getLatestLocation(widget.orderId);
     if (locationData != null && mounted) {
-      final lat = locationData['latitude'] as double?;
-      final lng = locationData['longitude'] as double?;
+      final lat = (locationData['lat'] as num?)?.toDouble();
+      final lng = (locationData['lng'] as num?)?.toDouble();
       if (lat != null && lng != null) {
         final position = LatLng(lat, lng);
         _updateRiderPosition(position);
@@ -154,15 +151,14 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
 
   void _updateRiderPosition(LatLng newPosition) {
     // Remove old rider marker
-    _markers.removeWhere((marker) {
-      final child = marker.child;
-      return child is Icon && child.icon == Icons.directions_bike;
-    });
+    _markers.removeWhere((marker) =>
+        marker.child is Icon &&
+        (marker.child as Icon).icon == Icons.directions_bike);
 
     // Add new rider marker
     _markers.add(Marker(
       point: newPosition,
-      child: const Icon(Icons.directions_bike, color: Colors.blue, size: 40),
+      child: const Icon(Icons.directions_bike, color: AppColors.primary, size: 40),
     ));
 
     _riderPosition = newPosition;
@@ -231,8 +227,9 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text('Tracking — ${widget.orderId}'),
-        backgroundColor: Colors.deepPurple,
-        centerTitle: true,
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
       ),
       body: Stack(
         children: [
@@ -251,11 +248,8 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                subdomains: const ['a'],
-                userAgentPackageName:
-                    'DispatchRider/1.0 (contact: support@dispatchrider.com)',
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.app',
               ),
               MarkerLayer(markers: _markers),
               PolylineLayer(polylines: _polylines),
@@ -326,32 +320,38 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
   Widget _floatingStatusCard() {
     final statusText = _statusTextForStep(_currentStep);
     return Material(
-      elevation: 6,
-      borderRadius: BorderRadius.circular(12),
+      elevation: 8,
+      shadowColor: Colors.black26,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(12)),
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd)),
         child: Row(
           children: [
             Expanded(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(statusText,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(statusText, style: AppText.h3),
                     const SizedBox(height: 6),
                     Text(
                         'ETA: $_minutesRemaining min • ${_distanceRemainingKm.toStringAsFixed(1)} km',
-                        style: const TextStyle(
-                            fontSize: 13, color: Colors.black54)),
+                        style: AppText.bodyMuted),
                   ]),
             ),
             CircleAvatar(
-              backgroundColor: Colors.deepPurple,
-              child: Text(_riderRatingShort(),
-                  style: const TextStyle(color: Colors.white)),
+              backgroundColor: AppColors.primary,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.star_rounded, color: Colors.white, size: 12),
+                  Text(' ${_riderRatingShort()}',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                ],
+              ),
             ),
           ],
         ),
@@ -406,12 +406,12 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
                     height: 14,
                     decoration: BoxDecoration(
                       color: done
-                          ? Colors.green
-                          : (active ? Colors.deepPurple : Colors.white),
+                          ? AppColors.success
+                          : (active ? AppColors.primary : Colors.white),
                       border: Border.all(
                           color: done || active
                               ? Colors.transparent
-                              : Colors.grey.shade400),
+                              : AppColors.border),
                       borderRadius: BorderRadius.circular(7),
                     ),
                   ),
@@ -419,7 +419,7 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
                     Container(
                       width: 2,
                       height: 36,
-                      color: Colors.grey.shade300,
+                      color: AppColors.border,
                       margin: const EdgeInsets.symmetric(vertical: 6),
                     ),
                 ],
@@ -432,13 +432,12 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: active ? Colors.deepPurple.shade50 : Colors.white,
+                  color: active ? AppColors.primary.withAlpha(20) : Colors.white,
                   borderRadius: BorderRadius.circular(8),
                   boxShadow: active
                       ? [
                           BoxShadow(
-                              color: Colors.deepPurple
-                                  .withAlpha((0.06 * 255).round()),
+                              color: AppColors.primary.withAlpha(15),
                               blurRadius: 6)
                         ]
                       : null,
@@ -447,8 +446,8 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
                   steps[i],
                   style: TextStyle(
                     color: done
-                        ? Colors.green.shade700
-                        : (active ? Colors.deepPurple : Colors.black87),
+                        ? AppColors.success
+                        : (active ? AppColors.primary : AppColors.textPrimary),
                     fontWeight:
                         active || done ? FontWeight.bold : FontWeight.normal,
                   ),
@@ -464,12 +463,14 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
   Widget _bottomRiderCard() {
     final rName = _riderName;
     return Material(
-      elevation: 12,
-      borderRadius: BorderRadius.circular(12),
+      elevation: 14,
+      shadowColor: Colors.black26,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(12)),
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusLg)),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -478,67 +479,76 @@ class _TrackOrderScreenState extends State<TrackOrderScreen>
               children: [
                 CircleAvatar(
                     radius: 28,
-                    backgroundColor: Colors.grey.shade200,
-                    child: Text(rName.substring(0, 1))),
+                    backgroundColor: AppColors.primary.withAlpha(24),
+                    child: Text(rName.substring(0, 1),
+                        style: const TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700))),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(rName,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold)),
+                        Text(rName, style: AppText.h3),
                         const SizedBox(height: 4),
-                        Text(_vehicle,
-                            style: const TextStyle(
-                                color: Colors.black54, fontSize: 13)),
+                        Text(_vehicle, style: AppText.bodyMuted),
                       ]),
                 ),
                 Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                   Text('$_minutesRemaining min',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                      style: AppText.h3.copyWith(color: AppColors.primary)),
                   const SizedBox(height: 4),
                   Text('${_distanceRemainingKm.toStringAsFixed(1)} km',
-                      style: const TextStyle(color: Colors.black54)),
+                      style: AppText.bodyMuted),
                 ]),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
 
             // action buttons
             Row(
               children: [
-                ElevatedButton.icon(
-                  onPressed: () => _callNumber(_riderPhone),
-                  icon: const Icon(Icons.call, size: 18),
-                  label: const Text('Call'),
-                  style:
-                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _callNumber(_riderPhone),
+                    icon: const Icon(Icons.call_rounded, size: 18),
+                    label: const Text('Call'),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.success),
+                  ),
                 ),
                 const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () => _openChat(),
-                  icon: const Icon(Icons.chat_bubble_outline),
-                  label: const Text('Chat'),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openChat(),
+                    icon: const Icon(Icons.chat_bubble_rounded, size: 18),
+                    label: const Text('Chat'),
+                  ),
                 ),
                 const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _cancelOrder,
-                  icon: const Icon(Icons.close),
-                  label: const Text('Cancel'),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _cancelOrder,
+                    icon: const Icon(Icons.close_rounded,
+                        size: 18, color: AppColors.danger),
+                    label: const Text('Cancel',
+                        style: TextStyle(color: AppColors.danger)),
+                    style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColors.danger)),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: AppSpacing.sm),
             // small progress / instructions
             Row(
               children: [
-                const Icon(Icons.location_on,
-                    size: 16, color: Colors.deepPurple),
+                const Icon(Icons.location_on_rounded,
+                    size: 16, color: AppColors.primary),
                 const SizedBox(width: 6),
                 Expanded(
-                    child:
-                        Text('Rider is on the move — stay at pickup location')),
+                    child: Text('Rider is on the move — stay at pickup location',
+                        style: AppText.caption)),
               ],
             ),
           ],

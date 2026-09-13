@@ -1,5 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/material.dart';
 
 class NotificationService {
   static final FirebaseMessaging _firebaseMessaging =
@@ -22,11 +23,11 @@ class NotificationService {
     }
 
     // Initialize local notifications
-    final AndroidInitializationSettings androidSettings =
+    const AndroidInitializationSettings androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
-    final DarwinInitializationSettings iosSettings =
+    const DarwinInitializationSettings iosSettings =
         DarwinInitializationSettings();
-    final InitializationSettings initSettings = InitializationSettings(
+    const InitializationSettings initSettings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
     );

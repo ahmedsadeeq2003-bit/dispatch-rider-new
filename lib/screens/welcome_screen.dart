@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
+import '../theme/app_theme.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -7,140 +8,100 @@ class WelcomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Top Row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Senditt',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top Row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Senditt', style: AppText.h1),
+                  OutlinedButton(
+                    onPressed: () {},
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      minimumSize: Size.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusPill),
                       ),
                     ),
-                    OutlinedButton(
-                      onPressed: () {},
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.grey),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 4),
-                      ),
-                      child: const Text(
-                        "English",
-                        style: TextStyle(color: Colors.black87, fontSize: 13),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 40),
-
-                // Center Lottie Animation
-                Center(
-                  child: Lottie.asset(
-                    'assets/animations/Delivery Riding.json',
-                    height: 250,
+                    child: const Text('English', style: AppText.caption),
                   ),
-                ),
-                const SizedBox(height: 30),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
 
-                // Tagline
-                const Center(
+              // Scrollable middle section (animation + tagline) so small
+              // screens never overflow — the buttons below stay pinned.
+              Expanded(
+                child: SingleChildScrollView(
                   child: Column(
                     children: [
+                      const SizedBox(height: AppSpacing.md),
+                      Lottie.asset(
+                        'assets/animations/Delivery Riding.json',
+                        height: 220,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
                       Text(
-                        "Deliveries Made Simple",
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
+                        'Deliveries Made Simple',
+                        style: AppText.h1,
                         textAlign: TextAlign.center,
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.sm),
                       Text(
-                        "Fast, safe, and reliable dispatch service for everyone.",
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.black54,
-                        ),
+                        'Fast, safe, and reliable dispatch service for everyone.',
+                        style: AppText.bodyMuted,
                         textAlign: TextAlign.center,
                       ),
+                      const SizedBox(height: AppSpacing.md),
                     ],
                   ),
                 ),
-                const SizedBox(height: 40),
+              ),
 
-                // Buttons
-                Center(
-                  child: Column(
-                    children: [
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pushNamed(context, '/login');
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueAccent,
-                          minimumSize: const Size(double.infinity, 50),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          "Login",
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pushNamed(context, '/register');
-                        },
-                        child: const Text(
-                          "Sign Up",
-                          style:
-                              TextStyle(color: Colors.blueAccent, fontSize: 15),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      OutlinedButton(
-                        onPressed: () {
-                          Navigator.pushNamed(context, '/rider');
-                        },
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.green),
-                          minimumSize: const Size(double.infinity, 50),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          "Rider",
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
+              // Buttons — always visible, never pushed off-screen
+              Column(
+                children: [
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/dispatch');
+                    },
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 55),
+                    ),
+                    child: const Text('Login'),
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(height: AppSpacing.sm),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/register');
+                    },
+                    child: const Text('Sign Up'),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  OutlinedButton(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/rider');
+                    },
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 55),
+                      side: const BorderSide(
+                          color: AppColors.secondary, width: 1.4),
+                      foregroundColor: AppColors.secondary,
+                    ),
+                    child: const Text('Rider'),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),

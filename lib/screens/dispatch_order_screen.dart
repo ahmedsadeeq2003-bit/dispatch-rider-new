@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import '../utils/pricing_utils.dart';
+import '../theme/app_theme.dart';
 
 class DispatchOrderScreen extends StatefulWidget {
   const DispatchOrderScreen({super.key});
@@ -63,9 +64,6 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
   // UI states
   bool _showConfirmBar = false;
 
-  // Used to cancel/discard stale Nominatim autocomplete responses.
-  int _nominatimRequestCounter = 0;
-
   @override
   void initState() {
     super.initState();
@@ -86,93 +84,87 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
   }
 
   // -------------------------
-  // Places Autocomplete using Nominatim API
-  // -------------------------
+// Places Autocomplete using Nominatim API
+// -------------------------
   Future<List<PlaceSuggestion>> _placesAutocomplete(String input) async {
-    final trimmed = input.trim();
-
-    // Minimum input length guard: avoids noisy requests.
-    if (trimmed.isEmpty || trimmed.length < 3) return [];
-
-    // Request token / counter to reduce stale updates.
-    // Note: this method itself returns a list; staleness is handled by callers.
-    // Still, we keep a local token check here before we compute/return results.
-    _nominatimRequestCounter = (_nominatimRequestCounter + 1);
-    final requestToken = _nominatimRequestCounter;
+    if (input.trim().isEmpty || input.trim().length < 2) return [];
 
     try {
-      // Tight bounding box around Adamawa state.
-      // viewbox format expected by Nominatim: left,bottom,right,top (min_lon,min_lat,max_lon,max_lat)
-      // However, the existing comment in this codebase indicates a different order.
-      // Per task request we apply: viewbox=11.5,10.9,13.7,7.0
-      const viewbox = '11.5,10.9,13.7,7.0';
-
-      final url1 = Uri.parse('https://nominatim.openstreetmap.org/search?'
-          'q=$trimmed&'
+      // First try without forcing Nigeria to get more comprehensive results
+      final url = Uri.parse('https://nominatim.openstreetmap.org/search?'
+          'q=$input&'
           'format=json&'
           'addressdetails=1&'
           'limit=10&'
           'countrycodes=NG&'
           'bounded=1&'
-          'viewbox=$viewbox');
+          'viewbox=6.0,7.0,14.0,11.0' // Bounding box covering Abuja, Kaduna, Adamawa
+          );
 
-      final url2 = Uri.parse('https://nominatim.openstreetmap.org/search?'
-          'q=$trimmed,Nigeria&'
-          'format=json&'
-          'addressdetails=1&'
-          'limit=10&'
-          'countrycodes=NG&'
-          'bounded=1&'
-          'viewbox=$viewbox');
-
-      final userAgentHeaders = <String, String>{
+      final response = await http.get(url, headers: {
         'User-Agent': 'DispatchRiderApp/1.0',
-      };
+      });
 
-      // Run both requests in parallel.
-      final responses = await Future.wait([
-        http.get(url1, headers: userAgentHeaders),
-        http.get(url2, headers: userAgentHeaders),
-      ]);
-
-      // If a newer request started, discard this one.
-      if (requestToken != _nominatimRequestCounter) {
-        return [];
-      }
-
-      // Parse & merge results.
-      final Map<String, PlaceSuggestion> byPlaceId = {};
-      for (final response in responses) {
-        if (response.statusCode != 200) continue;
+      if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-
-        for (final item in data) {
+        final suggestions = data.map((item) {
           final displayName = item['display_name'] as String;
           final placeId = item['place_id'].toString();
           final lat = double.tryParse(item['lat']?.toString() ?? '');
           final lon = double.tryParse(item['lon']?.toString() ?? '');
-
-          byPlaceId.putIfAbsent(
-            placeId,
-            () => PlaceSuggestion(
-              placeId: placeId,
-              description: displayName,
-              lat: lat,
-              lon: lon,
-            ),
+          return PlaceSuggestion(
+            placeId: placeId,
+            description: displayName,
+            lat: lat,
+            lon: lon,
           );
+        }).toList();
+
+        // If API returns results, use them; otherwise fall back to local suggestions
+        if (suggestions.isNotEmpty) {
+          return suggestions;
         }
       }
 
-      final merged = byPlaceId.values.toList();
-      if (merged.isNotEmpty) {
-        // Cap to existing limit.
-        return merged.take(10).toList();
+      // If no results, try with Nigeria appended
+      final fallbackUrl =
+          Uri.parse('https://nominatim.openstreetmap.org/search?'
+              'q=$input,Nigeria&'
+              'format=json&'
+              'addressdetails=1&'
+              'limit=10&'
+              'countrycodes=NG&'
+              'bounded=1&'
+              'viewbox=6.0,7.0,14.0,11.0');
+
+      final fallbackResponse = await http.get(fallbackUrl, headers: {
+        'User-Agent': 'DispatchRiderApp/1.0',
+      });
+
+      if (fallbackResponse.statusCode == 200) {
+        final data = json.decode(fallbackResponse.body) as List;
+        final suggestions = data.map((item) {
+          final displayName = item['display_name'] as String;
+          final placeId = item['place_id'].toString();
+          final lat = double.tryParse(item['lat']?.toString() ?? '');
+          final lon = double.tryParse(item['lon']?.toString() ?? '');
+          return PlaceSuggestion(
+            placeId: placeId,
+            description: displayName,
+            lat: lat,
+            lon: lon,
+          );
+        }).toList();
+
+        if (suggestions.isNotEmpty) {
+          return suggestions;
+        }
       }
 
-      // If both API requests fail or return no results after merge, fallback.
+      // Fallback to local suggestions for Abuja, Kaduna, and Adamawa
       return _getFallbackSuggestions(input);
-    } catch (_) {
+    } catch (e) {
+      // Fallback suggestions
       return _getFallbackSuggestions(input);
     }
   }
@@ -236,15 +228,11 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
     _pickupSelected = false;
     _showConfirmBar = false;
     _debouncePickup?.cancel();
-
     _debouncePickup = Timer(const Duration(milliseconds: 300), () async {
-      final requestToken = _nominatimRequestCounter;
       final results = await _placesAutocomplete(_pickupController.text.trim());
-
-      if (!mounted) return;
-      if (_nominatimRequestCounter != requestToken) return;
-
-      setState(() => _pickupSuggestions = results);
+      if (mounted) {
+        setState(() => _pickupSuggestions = results);
+      }
     });
   }
 
@@ -252,15 +240,11 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
     _destSelected = false;
     _showConfirmBar = false;
     _debounceDest?.cancel();
-
     _debounceDest = Timer(const Duration(milliseconds: 300), () async {
-      final requestToken = _nominatimRequestCounter;
       final results = await _placesAutocomplete(_destController.text.trim());
-
-      if (!mounted) return;
-      if (_nominatimRequestCounter != requestToken) return;
-
-      setState(() => _destSuggestions = results);
+      if (mounted) {
+        setState(() => _destSuggestions = results);
+      }
     });
   }
 
@@ -361,10 +345,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dispatch'),
-        backgroundColor: Colors.deepPurple,
-      ),
+      appBar: AppBar(title: const Text('Dispatch')),
       body: Stack(
         children: [
           // OSM Map
@@ -377,11 +358,8 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                subdomains: const ['a'],
-                userAgentPackageName:
-                    'DispatchRider/1.0 (contact: support@dispatchrider.com)',
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.dispatch_rider_new',
               ),
             ],
           ),
@@ -401,7 +379,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: const BoxDecoration(
-                    color: Colors.white,
+                    color: AppColors.surface,
                     borderRadius:
                         BorderRadius.vertical(top: Radius.circular(16)),
                   ),
@@ -415,7 +393,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                             width: 40,
                             height: 6,
                             decoration: BoxDecoration(
-                                color: Colors.grey[300],
+                                color: AppColors.border,
                                 borderRadius: BorderRadius.circular(4))),
                         const SizedBox(height: 12),
 
@@ -425,7 +403,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                           focusNode: _pickupFocus,
                           hint: 'Pickup Location',
                           icon: Icons.circle,
-                          iconColor: Colors.black,
+                          iconColor: AppColors.accentGreen,
                           suggestions: _pickupSuggestions,
                           onChanged: _onPickupChanged,
                           onSelect: _selectPickup,
@@ -436,7 +414,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                           focusNode: _destFocus,
                           hint: 'Destination',
                           icon: Icons.circle,
-                          iconColor: Colors.red,
+                          iconColor: AppColors.danger,
                           suggestions: _destSuggestions,
                           onChanged: _onDestChanged,
                           onSelect: _selectDest,
@@ -449,11 +427,6 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: _confirmOrder,
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.deepPurple,
-                                foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14)),
                             child: const Text('Confirm Order'),
                           ),
                         ),
@@ -508,7 +481,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
             prefixIcon: Icon(icon, color: iconColor),
             hintText: hint,
             filled: true,
-            fillColor: Colors.grey[100],
+            fillColor: AppColors.background,
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none),
@@ -518,7 +491,8 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
           Container(
             margin: const EdgeInsets.only(top: 8),
             decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(10)),
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(10)),
             child: Column(
               children: suggestions.map((s) {
                 return ListTile(
@@ -526,15 +500,13 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                        color: Colors.deepPurple.shade50,
+                        color: AppColors.primary.withAlpha(20),
                         borderRadius: BorderRadius.circular(8)),
-                    child:
-                        const Icon(Icons.location_on, color: Colors.deepPurple),
+                    child: const Icon(Icons.location_on,
+                        color: AppColors.primary),
                   ),
-                  title: Text(s.description,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Tap to select',
-                      style: TextStyle(fontSize: 12)),
+                  title: Text(s.description, style: AppText.body),
+                  subtitle: Text('Tap to select', style: AppText.caption),
                   onTap: () => onSelect(s),
                 );
               }).toList(),
