@@ -238,10 +238,25 @@ verify: row counts match recorded baseline; spot-check 10 deliveries end to end
 
 ## 9. What to do next
 
-1. Review & merge `chore/phase-0-cleanup`.
-2. Do the human Phase 0 items in §1 (key rotation, repo private, rules snapshot, backup).
+1. Review & merge `chore/phase-0-cleanup` (now also carries Phase 2 + 3 work — see below).
+2. Do the human Phase 0 items in §1 (key rotation, repo private, rules snapshot, backup) —
+   **still outstanding**, independent of the Supabase work.
 3. ~~Answer §7~~ — done (2026-09-13).
-4. **Phase 2** (next): create the Supabase project in `eu-west-2`, apply `0001`→`0003` in order,
-   scaffold the Node/TS backend repo, design the in-app admin surface (new requirement from §7 Q2),
-   and start the `DataService` seam refactor in the Flutter app (safe to begin while still on
-   Firebase).
+4. ~~Phase 2~~ — **done (2026-09-13).** Supabase project `dispatch-rider`
+   (`bvztrnekmjaulwsjymcc`, eu-west-2) created; migrations `0001`–`0007` applied (schema, RLS,
+   state machine + admin, security hardening, default company, rider_verifications reshaped to
+   match the actual UI, direct accepted→completed allowed). Full detail in `supabase/README.md`.
+5. ~~Phase 3 (app port)~~ — **done (2026-09-13)**, ahead of schedule (the Node/TS backend
+   scaffold and in-app admin screen were deferred — see below). `pubspec.yaml` now depends on
+   `supabase_flutter`; `firebase_core`/`firebase_messaging` are the only Firebase packages left
+   (push only). `AuthService`, `DeliveryService`, `LocationTrackingService`, `CompaniesService`,
+   `TenantService`, and every screen that touched Firestore/Firebase Auth directly are ported.
+   `flutter analyze` is clean (0 errors); `flutter test` is 4/5 (1 pre-existing, unrelated flake).
+6. **Still open / Phase 4 candidates:**
+   - Backend service (Node/TS) for real push fan-out, `apply_rider_rating()` caller, verification
+     review, company provisioning — the client-side notification path is still best-effort/local,
+     same limitation the Firebase version had.
+   - In-app admin screen (RLS already supports it, §7 Q2).
+   - Data backfill — **not needed**: confirmed pre-launch, zero real Firebase users/deliveries.
+   - Decommission the old Firebase project once nothing else depends on it (Messaging is the
+     only remaining consumer).
