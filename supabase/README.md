@@ -54,8 +54,17 @@ Database Webhook or called directly from the app) at zero extra cost.
   wiring the Database Webhook to `deliveries-webhook` (a Dashboard click-through) and setting the
   `FCM_PROJECT_ID`/`FCM_SERVICE_ACCOUNT_JSON` secrets (a Firebase-side credential, unavoidable
   regardless of where the code runs).
-- **In-app admin screen** — the RLS/DB side exists (0003) and the Edge Functions exist
-  (`admin-verifications`, `admin-companies`), but no Flutter UI calls them yet.
+- ~~In-app admin screen~~ — **done.** `lib/screens/admin/admin_dashboard_screen.dart`
+  (route `/admin`, reachable from the profile icon on the client dashboard and the app-bar icon
+  on the rider dashboard). Lists + approves/rejects pending verifications, lists + creates
+  companies. Gated by a `profiles.role` check in the screen itself (UI-only) and, for real,
+  server-side inside the Edge Functions — nobody without `role = 'admin'` can act even if they
+  reach the screen. **You still need to promote your own account to admin once** — no
+  self-service path exists by design; run in the Supabase SQL editor:
+  `update public.profiles set role = 'admin' where id = '<your auth uid>';`
+- ~~"Rate your rider" flow~~ — **done.** `lib/screens/rate_rider_screen.dart` (route
+  `/rate-rider`), reachable from a client's completed-delivery card once
+  `CompletedDeliveriesScreen` was wired to real data (see below). Calls `submit-rating`.
 - **Auth data migration** — no real Firebase users existed to migrate (confirmed pre-launch);
   nothing to import.
 - **Firestore data backfill** — not applicable for the same reason.

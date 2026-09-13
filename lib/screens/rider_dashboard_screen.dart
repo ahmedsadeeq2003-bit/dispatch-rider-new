@@ -67,7 +67,19 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('Rider Dashboard')),
+      appBar: AppBar(
+        title: const Text('Rider Dashboard'),
+        actions: [
+          // Admin access is gated inside AdminDashboardScreen itself
+          // (profiles.role check) and again server-side by the admin-*
+          // Edge Functions — safe to leave this reachable by anyone.
+          IconButton(
+            icon: const Icon(Icons.admin_panel_settings_outlined),
+            tooltip: 'Admin',
+            onPressed: () => Navigator.pushNamed(context, '/admin'),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppSpacing.md),

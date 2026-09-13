@@ -23,6 +23,8 @@ import 'screens/rider_auth_screen.dart';
 import 'screens/rider_login_screen.dart';
 import 'screens/rider_register_screen.dart';
 import 'screens/rider_verification_screen.dart';
+import 'screens/rate_rider_screen.dart';
+import 'screens/admin/admin_dashboard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -71,6 +73,8 @@ class DispatchRiderApp extends StatelessWidget {
         '/rider-register': (context) => RiderRegisterScreen(),
         '/pending-deliveries': (context) => PendingDeliveriesScreen(),
         '/completed-deliveries': (context) => CompletedDeliveriesScreen(),
+        '/rate-rider': (context) => const RateRiderScreen(),
+        '/admin': (context) => const AdminDashboardScreen(),
       },
     );
   }

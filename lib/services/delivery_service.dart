@@ -145,6 +145,19 @@ class DeliveryService {
               .compareTo(a['completed_at'] as String? ?? '')));
   }
 
+  // Get completed deliveries for a client (their own order history — used to
+  // surface the "Rate your rider" action)
+  static Stream<List<Map<String, dynamic>>> getCompletedDeliveriesForClient(
+      String clientId) {
+    return _client
+        .from('deliveries')
+        .stream(primaryKey: ['id'])
+        .eq('client_id', clientId)
+        .map((rows) => rows.where((r) => r['status'] == 'completed').toList()
+          ..sort((a, b) => (b['completed_at'] as String? ?? '')
+              .compareTo(a['completed_at'] as String? ?? '')));
+  }
+
   // Watch a single delivery (used while waiting for a rider to accept)
   static Stream<Map<String, dynamic>?> getDelivery(String deliveryId) {
     return _client

@@ -272,12 +272,18 @@ verify: row counts match recorded baseline; spot-check 10 deliveries end to end
    deployed and ACTIVE on the project. `DeliveryService.submitRating()` now calls the
    `submit-rating` function. Two small one-time steps remain, neither a hosting cost: wire the
    Database Webhook (Dashboard click-through) and set the FCM secrets (a Firebase credential).
-7. **Still open / Phase 4 candidates:**
-   - In-app admin screen (RLS + Edge Functions already support it, §7 Q2) — nothing in the
-     Flutter app calls `admin-verifications`/`admin-companies` yet.
-   - A "rate your rider" screen — nothing calls `submit-rating` yet either.
-   - `CompletedDeliveriesScreen` is still hardcoded mock data (only restyled, never wired to
-     `DeliveryService.getCompletedDeliveries()`, which works).
+7. ~~In-app admin screen~~ / ~~"Rate your rider" screen~~ / ~~CompletedDeliveriesScreen mock
+   data~~ — **all done (2026-09-13).** `admin_dashboard_screen.dart` (route `/admin`) calls
+   `admin-verifications`/`admin-companies`; `rate_rider_screen.dart` (route `/rate-rider`) calls
+   `submit-rating`; `CompletedDeliveriesScreen` now streams real data for both roles (rider view
+   via `getCompletedDeliveries`, client view via the new `getCompletedDeliveriesForClient`) and
+   surfaces the rate action per-card when `rating_submitted` is false. `flutter analyze` still 0
+   errors, same 48 pre-existing lints (none introduced).
+8. **Still open / Phase 4 candidates:**
+   - **You must promote your own account to admin once** — no self-service path by design (see
+     `supabase/README.md`); one manual SQL `UPDATE` after you've signed up in the app.
    - Data backfill — **not needed**: confirmed pre-launch, zero real Firebase users/deliveries.
    - Decommission the old Firebase project's Firestore/Auth/Storage once confident nothing
      depends on them (Messaging is the only remaining consumer).
+   - Still needs a human: wire the Database Webhook (Dashboard) + set the FCM secrets (§5.3) for
+     push to actually fire.

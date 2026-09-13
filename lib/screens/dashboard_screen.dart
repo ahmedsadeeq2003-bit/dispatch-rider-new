@@ -13,9 +13,16 @@ class DashboardScreen extends StatelessWidget {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: AppSpacing.md),
-            child: CircleAvatar(
-              backgroundColor: AppColors.primary.withAlpha(30),
-              child: const Icon(Icons.person, color: AppColors.primary),
+            child: GestureDetector(
+              // Admin access is gated inside AdminDashboardScreen itself
+              // (profiles.role check) and again server-side by the
+              // admin-* Edge Functions — safe to leave this reachable by
+              // anyone until a proper account/profile menu exists.
+              onTap: () => Navigator.pushNamed(context, '/admin'),
+              child: CircleAvatar(
+                backgroundColor: AppColors.primary.withAlpha(30),
+                child: const Icon(Icons.person, color: AppColors.primary),
+              ),
             ),
           ),
         ],
