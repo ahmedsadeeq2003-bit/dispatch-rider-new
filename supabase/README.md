@@ -20,6 +20,7 @@ Created 2026-09-13 as part of the Firebase → Supabase migration (see
 | 0005 | `0005_default_company.sql` | Seeds a `DEFAULT` company and makes `handle_new_user()` fall back to it — the redesigned UI has no company-code field, but the schema stays multi-tenant-ready |
 | 0006 | `0006_rider_verifications_match_ui.sql` | Reshapes `rider_verifications` to match the actual redesigned form (proof-of-address text + next-of-kin fields + one document image, not the original proof/selfie image pair) |
 | 0007 | `0007_allow_direct_completion.sql` | Widens the state machine so `accepted → completed` is legal directly (the app's "Complete" button skips `picked_up`/`in_transit`, which exist only as display labels today) |
+| 0008 | `0008_backend_support.sql` | `find_nearby_riders()` + `get_delivery_notify_targets()` RPCs (service_role-only) and `deliveries.rating_submitted` column, for the new `backend/` service |
 
 Apply order matters — run them in numeric order against a fresh project.
 
@@ -38,13 +39,14 @@ Apply order matters — run them in numeric order against a fresh project.
 
 ## What's NOT built yet (tracked in MIGRATION_PHASE1_DESIGN.md)
 
-- **Backend service** (Node/TypeScript, per decision) for: real push fan-out to riders who
-  aren't the person who just created the delivery (today's `_notifyRidersOfNewDelivery` in
-  `DeliveryService` is client-side/best-effort, same limitation as the old Firebase version —
-  see the NOTE in `lib/services/delivery_service.dart`), rating recompute via
-  `apply_rider_rating()` (service_role-only RPC, no caller yet), rider-verification review,
-  company/invite provisioning.
-- **In-app admin screen** — the RLS/DB side exists (0003), the Flutter UI does not.
+- ~~Backend service~~ — **done**, see `../backend/`. It calls `find_nearby_riders()` /
+  `get_delivery_notify_targets()` (added in `0008_backend_support.sql`) and `apply_rider_rating()`
+  for real FCM push + rating submission, and exposes `/admin/verifications` and
+  `/admin/companies`. Not yet deployed (needs a Render account + FCM service account — see
+  `../backend/README.md`); the Flutter app's client-side `_notifyRidersOfNewDelivery` stays as a
+  same-device fallback until the Database Webhook is wired up.
+- **In-app admin screen** — the RLS/DB side exists (0003) and the backend endpoints exist
+  (`/admin/*`), but no Flutter UI calls them yet.
 - **Auth data migration** — no real Firebase users existed to migrate (confirmed pre-launch);
   nothing to import.
 - **Firestore data backfill** — not applicable for the same reason.
