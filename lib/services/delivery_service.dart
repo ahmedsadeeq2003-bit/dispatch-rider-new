@@ -61,14 +61,13 @@ class DeliveryService {
     }
   }
 
-  // Find and notify nearest rider about new delivery request.
+  // Shows a same-device local notification as an immediate confirmation.
   //
-  // NOTE: this is client-side and best-effort (it only reaches riders whose
-  // app is open right now, via a LOCAL notification on THIS device — see
-  // MIGRATION_PHASE1_DESIGN.md §5). Real push fan-out to other riders'
-  // devices requires the backend service (Phase 3 follow-up), which will
-  // listen for `deliveries` inserts via a Database Webhook and call FCM
-  // directly using ST_DWithin/ST_Distance against profiles.last_geog.
+  // Real push fan-out to OTHER riders' devices is handled server-side by the
+  // `deliveries-webhook` Supabase Edge Function (supabase/functions/), which
+  // Supabase invokes automatically via a Database Webhook when this insert
+  // lands — see supabase/functions/README.md. This client-side call is just
+  // the local "request sent" confirmation, not the actual fan-out.
   static Future<void> _notifyRidersOfNewDelivery(
       String deliveryId, String pickup, String destination) async {
     try {
@@ -94,8 +93,8 @@ class DeliveryService {
       // Start location tracking for this delivery
       await LocationTrackingService().startTracking(deliveryId);
 
-      // Notify client that delivery was accepted (see NOTE above — local/
-      // best-effort until the backend service exists)
+      // The `deliveries-webhook` Edge Function pushes the client automatically
+      // in response to this UPDATE (see comment on _notifyRidersOfNewDelivery).
       print('Delivery $deliveryId accepted by rider $riderId');
     } catch (e) {
       print('Error accepting delivery: $e');
@@ -197,14 +196,19 @@ class DeliveryService {
     }
   }
 
-  // Update rider rating after completion.
-  // NOTE: this calls a backend-only RPC (service_role) — see
-  // apply_rider_rating() in supabase/migrations. It is not directly callable
-  // by end users, so this method is a placeholder until the backend service
-  // exists to receive the rating and call the RPC itself.
-  static Future<void> updateRiderRating(String riderId, double rating) async {
-    print(
-        'Rating submission for rider $riderId ($rating) — requires the backend service (not yet built) to call apply_rider_rating().');
+  // Client rates the rider of a completed delivery. Calls the `submit-rating`
+  // Edge Function, which validates ownership/status and is the only caller
+  // of the service_role-only apply_rider_rating() RPC — a client can never
+  // call that RPC directly (see supabase/migrations/0004_security_hardening.sql).
+  static Future<void> submitRating(String deliveryId, double stars) async {
+    final res = await _client.functions.invoke('submit-rating', body: {
+      'deliveryId': deliveryId,
+      'stars': stars,
+    });
+    final data = res.data;
+    if (data is Map && data['error'] != null) {
+      throw Exception(data['error']);
+    }
   }
 
   // Register rider FCM token

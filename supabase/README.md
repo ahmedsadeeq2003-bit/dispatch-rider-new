@@ -20,9 +20,18 @@ Created 2026-09-13 as part of the Firebase → Supabase migration (see
 | 0005 | `0005_default_company.sql` | Seeds a `DEFAULT` company and makes `handle_new_user()` fall back to it — the redesigned UI has no company-code field, but the schema stays multi-tenant-ready |
 | 0006 | `0006_rider_verifications_match_ui.sql` | Reshapes `rider_verifications` to match the actual redesigned form (proof-of-address text + next-of-kin fields + one document image, not the original proof/selfie image pair) |
 | 0007 | `0007_allow_direct_completion.sql` | Widens the state machine so `accepted → completed` is legal directly (the app's "Complete" button skips `picked_up`/`in_transit`, which exist only as display labels today) |
-| 0008 | `0008_backend_support.sql` | `find_nearby_riders()` + `get_delivery_notify_targets()` RPCs (service_role-only) and `deliveries.rating_submitted` column, for the new `backend/` service |
+| 0008 | `0008_backend_support.sql` | `find_nearby_riders()` + `get_delivery_notify_targets()` RPCs (service_role-only) and `deliveries.rating_submitted` column, for the Edge Functions in `functions/` |
 
 Apply order matters — run them in numeric order against a fresh project.
+
+## Server-side logic: Edge Functions, not an external backend
+
+**No Render, no separate hosting account, no extra bill.** All server-side logic (push
+fan-out, rider matching, rating submission, admin actions) runs as Supabase Edge Functions —
+see [`functions/README.md`](functions/README.md). An earlier design used a Render-hosted
+Node/Express service; it's been replaced entirely because Edge Functions already provide
+everything that design needed (server-side code with `service_role` access, triggered by a
+Database Webhook or called directly from the app) at zero extra cost.
 
 ## Known, accepted advisor findings (see 0004's trailing comment block)
 
@@ -39,14 +48,14 @@ Apply order matters — run them in numeric order against a fresh project.
 
 ## What's NOT built yet (tracked in MIGRATION_PHASE1_DESIGN.md)
 
-- ~~Backend service~~ — **done**, see `../backend/`. It calls `find_nearby_riders()` /
-  `get_delivery_notify_targets()` (added in `0008_backend_support.sql`) and `apply_rider_rating()`
-  for real FCM push + rating submission, and exposes `/admin/verifications` and
-  `/admin/companies`. Not yet deployed (needs a Render account + FCM service account — see
-  `../backend/README.md`); the Flutter app's client-side `_notifyRidersOfNewDelivery` stays as a
-  same-device fallback until the Database Webhook is wired up.
-- **In-app admin screen** — the RLS/DB side exists (0003) and the backend endpoints exist
-  (`/admin/*`), but no Flutter UI calls them yet.
+- ~~Backend service~~ — **done, deployed, Supabase-only.** 4 Edge Functions are live
+  (`deliveries-webhook`, `submit-rating`, `admin-verifications`, `admin-companies` — see
+  `functions/README.md`). Only two things remain, both one-time and neither is a hosting cost:
+  wiring the Database Webhook to `deliveries-webhook` (a Dashboard click-through) and setting the
+  `FCM_PROJECT_ID`/`FCM_SERVICE_ACCOUNT_JSON` secrets (a Firebase-side credential, unavoidable
+  regardless of where the code runs).
+- **In-app admin screen** — the RLS/DB side exists (0003) and the Edge Functions exist
+  (`admin-verifications`, `admin-companies`), but no Flutter UI calls them yet.
 - **Auth data migration** — no real Firebase users existed to migrate (confirmed pre-launch);
   nothing to import.
 - **Firestore data backfill** — not applicable for the same reason.

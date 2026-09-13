@@ -34,12 +34,12 @@ Artifacts produced in this phase:
 |---|---|---|
 | Database | Firestore → Supabase Postgres | new schema (§3), RLS (§4), data backfill (§8) |
 | Auth | Firebase Auth → Supabase Auth (GoTrue) | scrypt hash import, uid remap (§6) |
-| Server logic | **External always-on backend service** (not Edge Functions) | new small repo, hosted on Render/Fly (§5) |
-| Push | Keep **FCM**; backend does the sending | new FCM-only service account; Firebase project stays alive for Messaging (§5.3) |
-| Web | Ship the Flutter web build to a static host | Cloudflare Pages / Netlify; likely an ops/admin surface |
+| Server logic | ~~External backend service~~ → **Supabase Edge Functions** (revised 2026-09-13, zero hosting cost) | 4 functions deployed to the project itself, no Render/second account (§5) |
+| Push | Keep **FCM**; an Edge Function does the sending | new FCM-only service account (secret, not hosting); Firebase project stays alive for Messaging (§5.3) |
+| Web | Ship the Flutter web build to a static host | Cloudflare Pages / Netlify; likely an ops/admin surface; unaffected by the Edge Functions change |
 | Tenancy | Finish `company_id` isolation during the port | baked into schema + RLS now |
 | Realtime | Firestore `.snapshots()` → Supabase Realtime | 6 subscriptions remapped (§4.3) |
-| Backend language | **Node / TypeScript** | §7 Q1 |
+| Backend language | ~~Node / TypeScript (Render)~~ → **TypeScript on Deno (Supabase Edge Functions)** | §7 Q1, revised 2026-09-13 |
 | Admin | **Real in-app admin role**, not backend-only | new RLS + trigger in `0003`; needs an admin UI in Phase 3 (§7 Q2) |
 | Delivery lifecycle | rider can release; client can cancel with reason | enforced by DB trigger, `0003` (§7 Q3) |
 | Rider phone | shown as-is to the client on a shared delivery | §7 Q4 |
@@ -126,49 +126,63 @@ Supabase `.stream()` needs the table in the `supabase_realtime` publication — 
 
 ---
 
-## 5. Backend service design
+## 5. Backend service design — SUPERSEDED 2026-09-13 (Edge Functions, not Render)
 
-New repo (suggested name `dispatch-rider-backend`). **Not** in this Flutter repo.
+**Update:** §5.1–§5.5 below described an external Node/Express service on Render. It was built,
+typechecked, and verified working — then replaced same-day at the user's explicit request:
+*"I need the MVP to have zero hosting cost… redesign the architecture around Supabase only...
+Only introduce an external backend if there is a specific technical requirement that Supabase
+cannot handle."* Nothing about this app needed a requirement Supabase Edge Functions can't
+satisfy (server-side code with `service_role` access, triggered by a webhook or called directly
+from the app), so the Render service was deleted outright rather than kept as a parallel option.
+**Current architecture: 4 Supabase Edge Functions, deployed and ACTIVE. See
+`supabase/functions/README.md` for the live design** (endpoints, wiring, the one unavoidable
+manual step — FCM credentials, which cost nothing and aren't a hosting decision).
 
-### 5.1 Responsibilities (moving OUT of the Flutter client)
-1. **Push fan-out** — the piece that doesn't exist today. On new `pending` delivery: pick
-   candidate riders, send FCM. On `accepted`: notify the client.
-2. **Rider matching** — online + same company + within radius, ranked by rating/distance. The
-   current client-side version (`DeliveryService._notifyRidersOfNewDelivery`) is broken (invalid
-   multi-inequality query) and can't be trusted with tokens anyway.
-3. **Verification review** — admin approve/reject → update `rider_verifications`, optionally gate
-   the rider's ability to accept jobs.
-4. **Rating recompute** — call `apply_rider_rating()` on completion.
-5. **Company / invite-code provisioning** — admin-only.
+The responsibilities below (§5.1) are unchanged — only *where* they run changed:
 
-### 5.2 Trigger mechanism
-**Supabase Database Webhooks** (`pg_net`) → `POST https://<service>/hooks/deliveries` with a
-shared-secret header, firing on `deliveries` INSERT/UPDATE. No polling, no persistent socket.
-The service then queries Postgres (service_role) for candidate riders — using `ST_DWithin` if
-PostGIS is enabled, else a bounding-box + Haversine query.
+### 5.1 Responsibilities (moved out of the Flutter client into Edge Functions)
+1. **Push fan-out** — `deliveries-webhook`. On new `pending` delivery: pick candidate riders,
+   send FCM. On `accepted`: notify the client.
+2. **Rider matching** — `find_nearby_riders()` RPC (online + same company + within radius,
+   `ST_DWithin`/`ST_Distance`, ranked by distance) added in `0008_backend_support.sql`. The
+   client-side `DeliveryService._notifyRidersOfNewDelivery` now only fires a same-device
+   confirmation notification, not real fan-out.
+3. **Verification review** — `admin-verifications` (no Flutter UI calling it yet).
+4. **Rating recompute** — `submit-rating` is the only caller of `apply_rider_rating()`.
+5. **Company / invite-code provisioning** — `admin-companies` (no Flutter UI calling it yet).
 
-### 5.3 Auth & secrets
-- Service → Supabase: **`service_role` key** (bypasses RLS), server-side only.
-- Service → FCM: a **new dedicated service account** in the existing Firebase project with only
-  *Firebase Cloud Messaging API* permission (FCM HTTP v1). **Not** the old admin-sdk key.
-- Admin app → Service: verify the caller's Supabase JWT, check `role = 'admin'`.
-- Webhook → Service: shared secret in a header.
+### 5.2 Trigger mechanism (as built)
+A **Supabase Database Webhook** on `deliveries` (INSERT/UPDATE), **type = "Supabase Edge
+Functions"** pointed at `deliveries-webhook` — Supabase signs the call with the project's
+`service_role` key automatically when you pick that type, so the function keeps `verify_jwt =
+true` with no hand-rolled shared secret. One Dashboard click-through, no secret to copy.
 
-### 5.4 Language & hosting
-- **Language: Node + TypeScript** — best ecosystem fit for `@supabase/supabase-js` +
-  `google-auth-library`/`firebase-admin` (FCM). (Dart `shelf` is viable and keeps one language;
-  choose it only if the team strongly prefers Dart — the pricing/matching logic is ~50 lines to
-  port either way.)
-- **Hosting: Render Web Service** to start (GitHub auto-deploy, always-on, cheap, simple env-var
-  secrets). Fly.io if you later need region control or scale-to-zero.
-- Flutter **web** build → **Cloudflare Pages** (or Netlify) — static, separate from the service.
+### 5.3 Auth & secrets (as built)
+- Function → Supabase: **auto-injected** `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — every
+  Edge Function gets these for free, no manual secret setup.
+- Function → FCM: `FCM_PROJECT_ID` + `FCM_SERVICE_ACCOUNT_JSON` set as Edge Function secrets —
+  the one unavoidable manual step (§ above), unrelated to hosting.
+- Flutter → `submit-rating`/`admin-*`: the user's Supabase session JWT via
+  `functions.invoke(...)`, which Supabase's gateway verifies before the function even runs
+  (`verify_jwt: true`); `role = admin` is checked inside the function by reading `profiles.role`.
+- FCM signing: hand-rolled RS256 JWT + Web Crypto (`crypto.subtle`) exchanged for an OAuth token
+  at Google's token endpoint — no npm/Firebase Admin SDK dependency, since Deno's Web Crypto
+  covers it natively.
 
-### 5.5 Endpoints (sketch)
+### 5.4 Language & hosting (as built)
+- **Language: TypeScript on Deno** (Supabase Edge Functions' runtime) — same language family as
+  the original Node choice, zero extra hosting surface.
+- **Hosting: Supabase itself.** No Render, no Fly, no second account, no second bill.
+- Flutter **web** build hosting (Cloudflare Pages/Netlify, if pursued) is unaffected by this
+  change — that was always a separate, static-hosting decision.
+
+### 5.5 Endpoints (as built)
 ```
-POST /hooks/deliveries          ← Supabase webhook (shared secret)
-POST /admin/verifications/:id   ← { action: approve|reject }  (admin JWT)
-POST /admin/companies           ← create company + code       (admin JWT)
-GET  /healthz
+POST deliveries-webhook      ← Database Webhook (Supabase-signed), INSERT/UPDATE on deliveries
+POST submit-rating           ← Flutter, user JWT: {deliveryId, stars}
+POST admin-verifications     ← Flutter, admin JWT: {action: 'list'|'review', ...}
+POST admin-companies         ← Flutter, admin JWT: {action: 'list'|'create', ...}
 ```
 
 ---
@@ -246,17 +260,24 @@ verify: row counts match recorded baseline; spot-check 10 deliveries end to end
    (`bvztrnekmjaulwsjymcc`, eu-west-2) created; migrations `0001`–`0007` applied (schema, RLS,
    state machine + admin, security hardening, default company, rider_verifications reshaped to
    match the actual UI, direct accepted→completed allowed). Full detail in `supabase/README.md`.
-5. ~~Phase 3 (app port)~~ — **done (2026-09-13)**, ahead of schedule (the Node/TS backend
-   scaffold and in-app admin screen were deferred — see below). `pubspec.yaml` now depends on
+5. ~~Phase 3 (app port)~~ — **done (2026-09-13)**. `pubspec.yaml` now depends on
    `supabase_flutter`; `firebase_core`/`firebase_messaging` are the only Firebase packages left
    (push only). `AuthService`, `DeliveryService`, `LocationTrackingService`, `CompaniesService`,
    `TenantService`, and every screen that touched Firestore/Firebase Auth directly are ported.
    `flutter analyze` is clean (0 errors); `flutter test` is 4/5 (1 pre-existing, unrelated flake).
-6. **Still open / Phase 4 candidates:**
-   - Backend service (Node/TS) for real push fan-out, `apply_rider_rating()` caller, verification
-     review, company provisioning — the client-side notification path is still best-effort/local,
-     same limitation the Firebase version had.
-   - In-app admin screen (RLS already supports it, §7 Q2).
+6. ~~Backend service~~ — **done, redesigned, and deployed (2026-09-13).** Built first as a
+   Render/Node service, then **replaced same-day** with 4 Supabase Edge Functions at the user's
+   request for zero hosting cost (see §5's superseded note and `supabase/functions/README.md`).
+   All 4 (`deliveries-webhook`, `submit-rating`, `admin-verifications`, `admin-companies`) are
+   deployed and ACTIVE on the project. `DeliveryService.submitRating()` now calls the
+   `submit-rating` function. Two small one-time steps remain, neither a hosting cost: wire the
+   Database Webhook (Dashboard click-through) and set the FCM secrets (a Firebase credential).
+7. **Still open / Phase 4 candidates:**
+   - In-app admin screen (RLS + Edge Functions already support it, §7 Q2) — nothing in the
+     Flutter app calls `admin-verifications`/`admin-companies` yet.
+   - A "rate your rider" screen — nothing calls `submit-rating` yet either.
+   - `CompletedDeliveriesScreen` is still hardcoded mock data (only restyled, never wired to
+     `DeliveryService.getCompletedDeliveries()`, which works).
    - Data backfill — **not needed**: confirmed pre-launch, zero real Firebase users/deliveries.
-   - Decommission the old Firebase project once nothing else depends on it (Messaging is the
-     only remaining consumer).
+   - Decommission the old Firebase project's Firestore/Auth/Storage once confident nothing
+     depends on them (Messaging is the only remaining consumer).
