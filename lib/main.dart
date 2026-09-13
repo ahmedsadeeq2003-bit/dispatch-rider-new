@@ -29,19 +29,36 @@ import 'screens/admin/admin_dashboard_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Firebase is kept ONLY for push notifications (FCM).
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Firebase is kept ONLY for push notifications (FCM) — never let a failure
+  // here (e.g. web's known authDomain mismatch, see FORENSIC_AUDIT.md) stop
+  // the rest of the app from launching. The app works fully without it;
+  // only push notifications would be affected.
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e, st) {
+    debugPrint('Firebase.initializeApp failed (continuing without it): $e\n$st');
+  }
 
-  // Supabase is the database/auth/storage backend.
-  await Supabase.initialize(
-    url: SupabaseConfig.url,
-    publishableKey: SupabaseConfig.publishableKey,
-  );
+  // Supabase is the database/auth/storage backend — required, but a failure
+  // here should still show the app (with visible errors in each screen's own
+  // error state) rather than leave a permanently blank white page.
+  try {
+    await Supabase.initialize(
+      url: SupabaseConfig.url,
+      publishableKey: SupabaseConfig.publishableKey,
+    );
+  } catch (e, st) {
+    debugPrint('Supabase.initialize failed: $e\n$st');
+  }
 
-  // Initialize notifications
-  await NotificationService.initialize();
+  // Push notifications — no-ops on web (see NotificationService.initialize).
+  try {
+    await NotificationService.initialize();
+  } catch (e, st) {
+    debugPrint('NotificationService.initialize failed (continuing): $e\n$st');
+  }
 
   runApp(const DispatchRiderApp());
 }

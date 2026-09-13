@@ -1,5 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 class NotificationService {
@@ -9,6 +10,18 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   static Future<void> initialize() async {
+    if (kIsWeb) {
+      // Push isn't wired up for web in this project: flutter_local_notifications
+      // has no web platform implementation (initialize() would throw
+      // MissingPluginException), and Firebase Messaging on web additionally
+      // needs a firebase-messaging-sw.js service worker + VAPID key that
+      // don't exist here yet. Skip entirely rather than throw and block
+      // app startup (this was causing a blank page on `flutter run -d chrome`
+      // — main() awaited this with no error handling). See FORENSIC_AUDIT.md.
+      debugPrint('NotificationService: skipping init on web (not configured).');
+      return;
+    }
+
     // Request permission for notifications
     NotificationSettings settings = await _firebaseMessaging.requestPermission(
       alert: true,
