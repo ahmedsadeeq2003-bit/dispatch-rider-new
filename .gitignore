@@ -97,5 +97,9 @@ seed-script/*.json
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 *.env
-.env*
+.env
+.env.local
+.env.*.local
+!*.env.example
+!.env.example
 /c
