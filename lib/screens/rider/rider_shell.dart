@@ -27,11 +27,13 @@ class _RiderShellState extends State<RiderShell> {
 
   @override
   Widget build(BuildContext context) {
+    // No blanket SafeArea here: the Home tab is a full-bleed map that should
+    // run under the status bar, while the other tabs each own a normal
+    // AppBar/Scaffold that already accounts for the notch itself. Wrapping
+    // everything in one outer SafeArea would double that top inset on those
+    // tabs and stop Home's map from going edge-to-edge.
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: IndexedStack(index: _index, children: _tabs),
-      ),
+      body: IndexedStack(index: _index, children: _tabs),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
