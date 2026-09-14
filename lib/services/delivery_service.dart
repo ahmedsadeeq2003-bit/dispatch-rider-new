@@ -111,16 +111,28 @@ class DeliveryService {
         .order('created_at', ascending: false);
   }
 
-  // Get active deliveries for a rider
+  // Get active (in-progress) deliveries for a rider: accepted, picked_up, or
+  // in_transit — the full "on the way" lifecycle, not just the moment of
+  // acceptance, so the redesigned active-delivery screen has real stages to
+  // progress through.
+  static const Set<String> inProgressStatuses = {'accepted', 'picked_up', 'in_transit'};
+
   static Stream<List<Map<String, dynamic>>> getActiveDeliveries(
       String riderId) {
     return _client
         .from('deliveries')
         .stream(primaryKey: ['id'])
         .eq('rider_id', riderId)
-        .map((rows) => rows.where((r) => r['status'] == 'accepted').toList()
-          ..sort((a, b) => (b['accepted_at'] as String? ?? '')
-              .compareTo(a['accepted_at'] as String? ?? '')));
+        .map((rows) =>
+            rows.where((r) => inProgressStatuses.contains(r['status'])).toList()
+              ..sort((a, b) => (b['accepted_at'] as String? ?? '')
+                  .compareTo(a['accepted_at'] as String? ?? '')));
+  }
+
+  // Convenience for the rider Home tab: the single current in-progress job,
+  // if any, so it can be spotlighted above everything else.
+  static Stream<Map<String, dynamic>?> getMyCurrentJob(String riderId) {
+    return getActiveDeliveries(riderId).map((rows) => rows.isEmpty ? null : rows.first);
   }
 
   // Get client's deliveries (all statuses)
@@ -222,6 +234,20 @@ class DeliveryService {
     if (data is Map && data['error'] != null) {
       throw Exception(data['error']);
     }
+  }
+
+  // Rider's own profile snapshot (is_online, rating, full_name, etc.)
+  static Future<Map<String, dynamic>?> getMyProfile(String uid) async {
+    return await _client.from('profiles').select().eq('id', uid).maybeSingle();
+  }
+
+  // Toggle rider availability — profiles.is_online, the field the RLS
+  // pending-pool policy and rider matching both key off.
+  static Future<void> setOnlineStatus(String riderId, bool online) async {
+    await _client.from('profiles').update({
+      'is_online': online,
+      'last_location_at': DateTime.now().toIso8601String(),
+    }).eq('id', riderId);
   }
 
   // Register rider FCM token

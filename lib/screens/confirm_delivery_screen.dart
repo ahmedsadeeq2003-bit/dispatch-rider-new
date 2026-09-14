@@ -94,6 +94,7 @@ class _ConfirmDeliveryScreenState extends State<ConfirmDeliveryScreen> {
             // Navigate to rider details screen
             Navigator.pushReplacementNamed(context, '/riderdetails',
                 arguments: {
+                  'deliveryId': deliveryId,
                   'riderId': riderId,
                   'pickup': pickup,
                   'destination': destination,

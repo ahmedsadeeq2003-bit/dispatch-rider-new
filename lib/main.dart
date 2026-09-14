@@ -16,7 +16,7 @@ import 'screens/active_deliveries_screen.dart';
 import 'screens/dispatch_order_screen.dart';
 import 'screens/confirm_delivery_screen.dart';
 import 'screens/rider_details_screen.dart';
-import 'screens/rider_dashboard_screen.dart';
+import 'screens/rider/rider_shell.dart';
 import 'screens/pending_deliveries_screen.dart';
 import 'screens/completed_deliveries_screen.dart';
 import 'screens/rider_auth_screen.dart';
@@ -25,6 +25,8 @@ import 'screens/rider_register_screen.dart';
 import 'screens/rider_verification_screen.dart';
 import 'screens/rate_rider_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
+import 'screens/profile_screen.dart';
+import 'screens/contact_us_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -85,13 +87,15 @@ class DispatchRiderApp extends StatelessWidget {
         '/riderdetails': (context) => RiderDetailsScreen(),
         '/rider': (context) => RiderAuthScreen(),
         '/rider-verification': (context) => RiderVerificationScreen(),
-        '/rider-dashboard': (context) => RiderDashboardScreen(),
+        '/rider-dashboard': (context) => const RiderShell(),
         '/rider-login': (context) => RiderLoginScreen(),
         '/rider-register': (context) => RiderRegisterScreen(),
         '/pending-deliveries': (context) => PendingDeliveriesScreen(),
         '/completed-deliveries': (context) => CompletedDeliveriesScreen(),
         '/rate-rider': (context) => const RateRiderScreen(),
         '/admin': (context) => const AdminDashboardScreen(),
+        '/profile': (context) => const ProfileScreen(),
+        '/contact-us': (context) => const ContactUsScreen(),
       },
     );
   }

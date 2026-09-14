@@ -4,6 +4,8 @@ import '../services/delivery_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/status_badge.dart';
+import '../widgets/skeleton.dart';
+import '../widgets/motion.dart';
 
 class CompletedDeliveriesScreen extends StatefulWidget {
   const CompletedDeliveriesScreen({super.key});
@@ -68,13 +70,17 @@ class _CompletedDeliveriesScreenState extends State<CompletedDeliveriesScreen> {
         stream: stream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
+            return ListView(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              children: const [SkeletonDeliveryCard(), SkeletonDeliveryCard()],
             );
           }
           if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}', style: AppText.bodyMuted),
+            return EmptyState(
+              icon: Icons.error_outline_rounded,
+              title: 'Could not load history',
+              subtitle: '${snapshot.error}',
+              color: AppColors.danger,
             );
           }
 
@@ -91,9 +97,12 @@ class _CompletedDeliveriesScreenState extends State<CompletedDeliveriesScreen> {
           return ListView.builder(
             padding: const EdgeInsets.all(AppSpacing.md),
             itemCount: deliveries.length,
-            itemBuilder: (context, i) => _CompletedCard(
-              delivery: deliveries[i],
-              showRateButton: !isRider,
+            itemBuilder: (context, i) => FadeSlideIn(
+              delay: Duration(milliseconds: i * 40),
+              child: _CompletedCard(
+                delivery: deliveries[i],
+                showRateButton: !isRider,
+              ),
             ),
           );
         },

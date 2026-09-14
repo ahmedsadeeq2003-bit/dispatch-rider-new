@@ -32,7 +32,7 @@ class WelcomeScreen extends StatelessWidget {
                             BorderRadius.circular(AppSpacing.radiusPill),
                       ),
                     ),
-                    child: const Text('English', style: AppText.caption),
+                    child: Text('English', style: AppText.caption),
                   ),
                 ],
               ),

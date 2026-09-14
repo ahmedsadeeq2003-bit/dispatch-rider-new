@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-/// Friendly empty-state used when a list (deliveries, orders) has no items.
+/// Friendly empty/error/permission state — used whenever a list has nothing
+/// to show, a request failed, or a permission is missing. Always pairs the
+/// icon+message with a recovery action when one exists, per the "never just
+/// say 'something went wrong'" rule.
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
   final Color color;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   const EmptyState({
     super.key,
@@ -14,6 +19,8 @@ class EmptyState extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.color = AppColors.primary,
+    this.actionLabel,
+    this.onAction,
   });
 
   @override
@@ -36,8 +43,15 @@ class EmptyState extends StatelessWidget {
             const SizedBox(height: AppSpacing.lg),
             Text(title, style: AppText.h3, textAlign: TextAlign.center),
             const SizedBox(height: AppSpacing.xs),
-            Text(subtitle,
-                style: AppText.bodyMuted, textAlign: TextAlign.center),
+            Text(subtitle, style: AppText.bodyMuted, textAlign: TextAlign.center),
+            if (actionLabel != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              ElevatedButton(
+                onPressed: onAction,
+                style: ElevatedButton.styleFrom(backgroundColor: color),
+                child: Text(actionLabel!),
+              ),
+            ],
           ],
         ),
       ),
