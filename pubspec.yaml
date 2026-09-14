@@ -10,39 +10,46 @@ dependencies:
     sdk: flutter
 
   # UI / Animations
-  lottie: ^3.1.0
+  lottie: ^3.1.2
   cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
+  fluttertoast: ^8.2.8
 
   # Maps & Location
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  geolocator: ^13.0.1
+  geocoding: ^3.0.0
   location: ^6.0.1
-  geolocator: ^13.0.2
-  geocoding: ^2.1.0
 
-  # Firebase
-  firebase_core: ^3.4.0
-  firebase_auth: ^5.3.0
-  firebase_messaging: ^15.1.0
-  cloud_firestore: ^5.4.0
+  # Firebase — kept ONLY for push notifications (FCM). Auth/Firestore/Storage
+  # have moved to Supabase; see supabase/README.md.
+  firebase_core: ^3.6.0
+  firebase_messaging: ^15.1.3
+
+  # Supabase — database, auth, storage, realtime
+  supabase_flutter: ^2.8.0
 
   # Notifications
-  flutter_local_notifications: ^17.2.2
+  flutter_local_notifications: ^18.0.1
 
   # State Management & Storage
-  provider: ^6.1.5
-  shared_preferences: ^2.5.3
+  provider: ^6.1.2
+  shared_preferences: ^2.3.2
 
   # Utilities
-  url_launcher: ^6.3.2
-  flutter_launcher_icons: ^0.14.4
-  flutter_map: ^8.2.2
-  latlong2: ^0.9.1
-  http: ^1.2.1
+  url_launcher: ^6.3.1
+  http: ^1.2.2
   image_picker: ^1.1.2
+
+  # Loading UI
+  loading_overlay: ^0.5.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
@@ -50,3 +57,4 @@ flutter:
     - assets/google_icon.png
     - assets/icloud_icon.png
     - assets/animations/Delivery Riding.json
+

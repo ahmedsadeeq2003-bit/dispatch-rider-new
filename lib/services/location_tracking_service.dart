@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LocationTrackingService {
   static final LocationTrackingService _instance =
@@ -8,7 +8,7 @@ class LocationTrackingService {
   factory LocationTrackingService() => _instance;
   LocationTrackingService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final SupabaseClient _client = Supabase.instance.client;
   Timer? _trackingTimer;
   String? _currentDeliveryId;
   StreamSubscription<Position>? _positionStream;
@@ -68,27 +68,34 @@ class LocationTrackingService {
     _currentDeliveryId = null;
   }
 
-  /// Update current location to Firestore
+  /// Update current location to Supabase
   Future<void> _updateLocation() async {
     if (_currentDeliveryId == null) return;
+
+    final riderId = _client.auth.currentUser?.id;
+    if (riderId == null) return;
 
     try {
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: _accuracy,
       );
 
-      // Store location update in Firestore subcollection
-      await _firestore
-          .collection('deliveries')
-          .doc(_currentDeliveryId!)
-          .collection('locationUpdates')
-          .add({
-        'latitude': position.latitude,
-        'longitude': position.longitude,
-        'timestamp': FieldValue.serverTimestamp(),
+      // Store delivery location update
+      await _client.from('delivery_locations').insert({
+        'delivery_id': _currentDeliveryId,
+        'rider_id': riderId,
+        'lat': position.latitude,
+        'lng': position.longitude,
         'speed': position.speed, // meters per second
         'accuracy': position.accuracy,
       });
+
+      // Update rider's current position on their profile
+      await _client.from('profiles').update({
+        'last_lat': position.latitude,
+        'last_lng': position.longitude,
+        'last_location_at': DateTime.now().toIso8601String(),
+      }).eq('id', riderId);
 
       print(
           'Location updated for delivery $_currentDeliveryId: ${position.latitude}, ${position.longitude}');
@@ -100,16 +107,15 @@ class LocationTrackingService {
   /// Get the latest location for a delivery
   Future<Map<String, dynamic>?> getLatestLocation(String deliveryId) async {
     try {
-      QuerySnapshot snapshot = await _firestore
-          .collection('deliveries')
-          .doc(deliveryId)
-          .collection('locationUpdates')
-          .orderBy('timestamp', descending: true)
-          .limit(1)
-          .get();
+      final rows = await _client
+          .from('delivery_locations')
+          .select()
+          .eq('delivery_id', deliveryId)
+          .order('recorded_at', ascending: false)
+          .limit(1);
 
-      if (snapshot.docs.isNotEmpty) {
-        return snapshot.docs.first.data() as Map<String, dynamic>;
+      if (rows.isNotEmpty) {
+        return rows.first;
       }
     } catch (e) {
       print('Error getting latest location: $e');
@@ -118,14 +124,13 @@ class LocationTrackingService {
   }
 
   /// Stream of location updates for a delivery (for real-time tracking)
-  Stream<QuerySnapshot> getLocationUpdates(String deliveryId) {
-    return _firestore
-        .collection('deliveries')
-        .doc(deliveryId)
-        .collection('locationUpdates')
-        .orderBy('timestamp', descending: true)
-        .limit(10) // Keep last 10 updates for efficiency
-        .snapshots();
+  Stream<List<Map<String, dynamic>>> getLocationUpdates(String deliveryId) {
+    return _client
+        .from('delivery_locations')
+        .stream(primaryKey: ['id'])
+        .eq('delivery_id', deliveryId)
+        .order('recorded_at', ascending: false)
+        .limit(10); // Keep last 10 updates for efficiency
   }
 
   /// Check if currently tracking a delivery

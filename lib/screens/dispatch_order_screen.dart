@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import '../utils/pricing_utils.dart';
+import '../theme/app_theme.dart';
 
 class DispatchOrderScreen extends StatefulWidget {
   const DispatchOrderScreen({super.key});
@@ -344,10 +345,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dispatch'),
-        backgroundColor: Colors.deepPurple,
-      ),
+      appBar: AppBar(title: const Text('Dispatch')),
       body: Stack(
         children: [
           // OSM Map
@@ -381,7 +379,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: const BoxDecoration(
-                    color: Colors.white,
+                    color: AppColors.surface,
                     borderRadius:
                         BorderRadius.vertical(top: Radius.circular(16)),
                   ),
@@ -395,7 +393,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                             width: 40,
                             height: 6,
                             decoration: BoxDecoration(
-                                color: Colors.grey[300],
+                                color: AppColors.border,
                                 borderRadius: BorderRadius.circular(4))),
                         const SizedBox(height: 12),
 
@@ -405,7 +403,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                           focusNode: _pickupFocus,
                           hint: 'Pickup Location',
                           icon: Icons.circle,
-                          iconColor: Colors.black,
+                          iconColor: AppColors.accentGreen,
                           suggestions: _pickupSuggestions,
                           onChanged: _onPickupChanged,
                           onSelect: _selectPickup,
@@ -416,7 +414,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                           focusNode: _destFocus,
                           hint: 'Destination',
                           icon: Icons.circle,
-                          iconColor: Colors.red,
+                          iconColor: AppColors.danger,
                           suggestions: _destSuggestions,
                           onChanged: _onDestChanged,
                           onSelect: _selectDest,
@@ -429,11 +427,6 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: _confirmOrder,
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.deepPurple,
-                                foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14)),
                             child: const Text('Confirm Order'),
                           ),
                         ),
@@ -488,7 +481,7 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
             prefixIcon: Icon(icon, color: iconColor),
             hintText: hint,
             filled: true,
-            fillColor: Colors.grey[100],
+            fillColor: AppColors.background,
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none),
@@ -498,7 +491,8 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
           Container(
             margin: const EdgeInsets.only(top: 8),
             decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(10)),
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(10)),
             child: Column(
               children: suggestions.map((s) {
                 return ListTile(
@@ -506,15 +500,13 @@ class _DispatchOrderScreenState extends State<DispatchOrderScreen>
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                        color: Colors.deepPurple.shade50,
+                        color: AppColors.primary.withAlpha(20),
                         borderRadius: BorderRadius.circular(8)),
-                    child:
-                        const Icon(Icons.location_on, color: Colors.deepPurple),
+                    child: const Icon(Icons.location_on,
+                        color: AppColors.primary),
                   ),
-                  title: Text(s.description,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Tap to select',
-                      style: TextStyle(fontSize: 12)),
+                  title: Text(s.description, style: AppText.body),
+                  subtitle: Text('Tap to select', style: AppText.caption),
                   onTap: () => onSelect(s),
                 );
               }).toList(),

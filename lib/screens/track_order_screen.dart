@@ -6,11 +6,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/location_tracking_service.dart';
+import '../services/delivery_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/motion.dart';
 
+/// The active-delivery experience — the flagship screen of the app. Real
+/// delivery state drives everything here (no mock rider, no fake timeline):
+/// `deliveries.status` (accepted/picked_up/in_transit/completed) IS the
+/// progression, and one primary action is shown at a time so a rider moving
+/// mid-shift always knows exactly what to do next.
 class TrackOrderScreen extends StatefulWidget {
-  // Optionally accept pickup/destination coords from previous screen:
   final LatLng? pickup;
   final LatLng? destination;
   final String orderId;
@@ -26,562 +33,622 @@ class TrackOrderScreen extends StatefulWidget {
   State<TrackOrderScreen> createState() => _TrackOrderScreenState();
 }
 
-enum OrderStep {
-  accepted,
-  riderToPickup,
-  packagePicked,
-  riderToDestination,
-  delivered,
-}
-
-class _TrackOrderScreenState extends State<TrackOrderScreen>
-    with TickerProviderStateMixin {
-  // Default mock coords (Lagos example) — replace with real place details if available.
-  final LatLng _defaultPickup = const LatLng(6.5244, 3.3792); // Lagos center
-  final LatLng _defaultDestination =
-      const LatLng(6.4453, 3.3915); // another point in Lagos
+class _TrackOrderScreenState extends State<TrackOrderScreen> {
+  final LatLng _fallbackCenter = const LatLng(9.0765, 7.3986); // Abuja fallback
 
   late MapController _mapController;
-  final List<Marker> _markers = [];
-  final List<Polyline> _polylines = [];
-
-  // Rider state (real-time from Firestore)
+  StreamSubscription<List<Map<String, dynamic>>>? _locationSubscription;
   LatLng? _riderPosition;
-  StreamSubscription<QuerySnapshot>? _locationSubscription;
 
-  // Timeline state
-  OrderStep _currentStep = OrderStep.accepted;
+  Map<String, dynamic>? _delivery;
+  StreamSubscription<Map<String, dynamic>?>? _deliverySubscription;
+  Map<String, dynamic>? _counterpartProfile; // the "other side" of this job
+  bool _actionInFlight = false;
 
-  // Rider details (mock - would come from delivery data in real app)
-  final String _riderName = 'John Doe';
-  final String _riderPhone = '+2348012345678';
-  final String _vehicle = 'Motorbike • KAV 2019';
-  final double _riderRating = 4.9;
+  double? _distanceRemainingKm;
 
-  // ETA & distance (estimated based on rider position)
-  int _minutesRemaining = 8;
-  double _distanceRemainingKm = 3.2;
-
-  late AnimationController _cardAnimController;
+  String? get _myUid => Supabase.instance.client.auth.currentUser?.id;
+  bool get _isRider => _delivery != null && _delivery!['rider_id'] == _myUid;
 
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
-    _cardAnimController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 300));
-    _setupInitialMarkers();
+    _subscribeToDelivery();
     _startLocationTracking();
   }
 
   @override
   void dispose() {
     _locationSubscription?.cancel();
-    _cardAnimController.dispose();
+    _deliverySubscription?.cancel();
     _mapController.dispose();
     super.dispose();
   }
 
-  void _setupInitialMarkers() {
-    final pickup = widget.pickup ?? _defaultPickup;
-    final dest = widget.destination ?? _defaultDestination;
+  void _subscribeToDelivery() {
+    _deliverySubscription = DeliveryService.getDelivery(widget.orderId).listen((data) async {
+      if (!mounted || data == null) return;
+      final counterpartId = _myUid == data['rider_id'] ? data['client_id'] : data['rider_id'];
+      if (_counterpartProfile == null || _counterpartProfile!['id'] != counterpartId) {
+        _loadCounterpart(counterpartId as String?);
+      }
+      setState(() => _delivery = data);
+      _updateDistance();
+    });
+  }
 
-    _markers.clear();
-    _markers.add(Marker(
-      point: pickup,
-      child: const Icon(Icons.location_on, color: Colors.green, size: 40),
-    ));
-    _markers.add(Marker(
-      point: dest,
-      child: const Icon(Icons.location_on, color: Colors.red, size: 40),
-    ));
-
-    // Rider marker will be added when location data is received
-    if (_riderPosition != null) {
-      _markers.add(Marker(
-        point: _riderPosition!,
-        child: const Icon(Icons.directions_bike, color: Colors.blue, size: 40),
-      ));
-    }
-
-    // Simple polyline between pickup and destination
-    _polylines.clear();
-    _polylines.add(Polyline(
-      points: [pickup, dest],
-      color: Colors.deepPurple,
-      strokeWidth: 3,
-    ));
+  Future<void> _loadCounterpart(String? id) async {
+    if (id == null) return;
+    final profile = await Supabase.instance.client
+        .from('profiles')
+        .select('id, full_name, phone_number, rating')
+        .eq('id', id)
+        .maybeSingle();
+    if (!mounted) return;
+    setState(() => _counterpartProfile = profile);
   }
 
   void _startLocationTracking() {
-    // Listen to real-time location updates from Firestore
-    _locationSubscription = LocationTrackingService()
-        .getLocationUpdates(widget.orderId)
-        .listen((snapshot) {
-      if (!mounted) return;
-
-      if (snapshot.docs.isNotEmpty) {
-        final latestLocation =
-            snapshot.docs.first.data() as Map<String, dynamic>?;
-        if (latestLocation != null) {
-          final lat = latestLocation['latitude'] as double?;
-          final lng = latestLocation['longitude'] as double?;
-
-          if (lat != null && lng != null) {
-            final newPosition = LatLng(lat, lng);
-            _updateRiderPosition(newPosition);
-          }
-        }
+    _locationSubscription =
+        LocationTrackingService().getLocationUpdates(widget.orderId).listen((rows) {
+      if (!mounted || rows.isEmpty) return;
+      final lat = (rows.first['lat'] as num?)?.toDouble();
+      final lng = (rows.first['lng'] as num?)?.toDouble();
+      if (lat != null && lng != null) {
+        setState(() => _riderPosition = LatLng(lat, lng));
+        _updateDistance();
+        try {
+          _mapController.move(_riderPosition!, _mapController.camera.zoom);
+        } catch (_) {}
       }
     });
-
-    // Also try to get the latest location immediately
-    _loadLatestLocation();
   }
 
-  Future<void> _loadLatestLocation() async {
-    final locationData =
-        await LocationTrackingService().getLatestLocation(widget.orderId);
-    if (locationData != null && mounted) {
-      final lat = locationData['latitude'] as double?;
-      final lng = locationData['longitude'] as double?;
-      if (lat != null && lng != null) {
-        final position = LatLng(lat, lng);
-        _updateRiderPosition(position);
-      }
-    }
+  LatLng? get _pickup {
+    final lat = (_delivery?['pickup_lat'] as num?)?.toDouble() ?? widget.pickup?.latitude;
+    final lng = (_delivery?['pickup_lng'] as num?)?.toDouble() ?? widget.pickup?.longitude;
+    if (lat == null || lng == null) return widget.pickup;
+    return LatLng(lat, lng);
   }
 
-  void _updateRiderPosition(LatLng newPosition) {
-    // Remove old rider marker
-    _markers.removeWhere((marker) =>
-        marker.child is Icon &&
-        (marker.child as Icon).icon == Icons.directions_bike);
-
-    // Add new rider marker
-    _markers.add(Marker(
-      point: newPosition,
-      child: const Icon(Icons.directions_bike, color: Colors.blue, size: 40),
-    ));
-
-    _riderPosition = newPosition;
-
-    // Update ETA and distance based on current position
-    _updateETA();
-
-    // Animate camera to rider position
-    _mapController.move(newPosition, _mapController.camera.zoom);
-
-    setState(() {});
+  LatLng? get _dropoff {
+    final lat = (_delivery?['dropoff_lat'] as num?)?.toDouble() ?? widget.destination?.latitude;
+    final lng = (_delivery?['dropoff_lng'] as num?)?.toDouble() ?? widget.destination?.longitude;
+    if (lat == null || lng == null) return widget.destination;
+    return LatLng(lat, lng);
   }
 
-  void _updateETA() {
-    if (_riderPosition == null) return;
-
-    final dest = widget.destination ?? _defaultDestination;
-    _distanceRemainingKm = _estimateDistanceKm(_riderPosition!, dest);
-
-    // Estimate time based on distance (assuming average speed of 30 km/h)
-    const averageSpeedKmh = 30.0;
-    final hoursRemaining = _distanceRemainingKm / averageSpeedKmh;
-    _minutesRemaining = max(1, (hoursRemaining * 60).round());
-  }
-
-  // Utility to make an interpolated route between two points
-  List<LatLng> _interpolateRoute(LatLng a, LatLng b, int steps) {
-    final List<LatLng> pts = [];
-    for (var i = 0; i <= steps; i++) {
-      final t = i / steps;
-      final lat = _lerp(a.latitude, b.latitude, t) + _jitter(i, steps);
-      final lng = _lerp(a.longitude, b.longitude, t) + _jitter(i + 13, steps);
-      pts.add(LatLng(lat, lng));
-    }
-    return pts;
-  }
-
-  double _lerp(double a, double b, double t) => a + (b - a) * t;
-  double _jitter(int i, int steps) {
-    // small predictable jitter so route doesn't look perfectly straight
-    final r = (i % 3) - 1; // -1,0,1
-    return r * 0.00012; // tiny offset
+  void _updateDistance() {
+    final status = _delivery?['status'] as String?;
+    final target = status == 'accepted' ? _pickup : _dropoff;
+    if (_riderPosition == null || target == null) return;
+    _distanceRemainingKm = _estimateDistanceKm(_riderPosition!, target);
   }
 
   double _estimateDistanceKm(LatLng a, LatLng b) {
-    const earth = 6371.0; // km
+    const earth = 6371.0;
     final dLat = _deg2rad(b.latitude - a.latitude);
     final dLon = _deg2rad(b.longitude - a.longitude);
     final lat1 = _deg2rad(a.latitude);
     final lat2 = _deg2rad(b.latitude);
-    final hav = sin(dLat / 2) * sin(dLat / 2) +
-        sin(dLon / 2) * sin(dLon / 2) * cos(lat1) * cos(lat2);
+    final hav = sin(dLat / 2) * sin(dLat / 2) + sin(dLon / 2) * sin(dLon / 2) * cos(lat1) * cos(lat2);
     final c = 2 * atan2(sqrt(hav), sqrt(1 - hav));
     return double.parse((earth * c).toStringAsFixed(1));
   }
 
   double _deg2rad(double deg) => deg * (pi / 180);
 
-  // -----------------------
-  // UI Building
-  // -----------------------
+  // ---------------------------------------------------------------------
+  // Rider actions — one primary action per stage.
+  // ---------------------------------------------------------------------
+  Future<void> _advance(String nextStatus) async {
+    setState(() => _actionInFlight = true);
+    try {
+      await DeliveryService.updateDeliveryStatus(widget.orderId, nextStatus);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.danger),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _actionInFlight = false);
+    }
+  }
+
+  Future<void> _openCompletionSheet() async {
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _CompletionSheet(
+        destination: _delivery?['dropoff_address'] as String? ?? 'destination',
+        price: (_delivery?['price_naira'] as num?)?.toDouble() ?? 0,
+      ),
+    );
+    if (confirmed != true) return;
+    await _advance('completed');
+    await LocationTrackingService().stopTracking();
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _DeliveredSuccessDialog(
+        price: (_delivery?['price_naira'] as num?)?.toDouble() ?? 0,
+      ),
+    );
+    if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _releaseJob() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Release this job?'),
+        content: const Text('It will go back to the pending pool for other riders.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Release', style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await DeliveryService.releaseDelivery(widget.orderId);
+    await LocationTrackingService().stopTracking();
+    if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _clientCancel() async {
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel this delivery?'),
+        content: TextField(
+          controller: reasonController,
+          decoration: const InputDecoration(hintText: 'Reason (required)'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Back')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Cancel Delivery', style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || reasonController.text.trim().isEmpty) return;
+    try {
+      await DeliveryService.cancelDelivery(widget.orderId, reasonController.text.trim());
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.danger),
+        );
+      }
+    }
+  }
+
+  Future<void> _callNumber(String? phone) async {
+    if (phone == null) return;
+    final uri = Uri.parse('tel:$phone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // UI
+  // ---------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    final pickup = widget.pickup ?? _defaultPickup;
+    final status = _delivery?['status'] as String? ?? 'accepted';
+    final pickup = _pickup ?? _fallbackCenter;
+    final dropoff = _dropoff ?? _fallbackCenter;
+
+    final markers = <Marker>[
+      Marker(
+        point: pickup,
+        child: const Icon(Icons.circle, color: AppColors.accentGreen, size: 18),
+      ),
+      Marker(
+        point: dropoff,
+        child: const Icon(Icons.location_on_rounded, color: AppColors.danger, size: 34),
+      ),
+      if (_riderPosition != null)
+        Marker(
+          point: _riderPosition!,
+          width: 44,
+          height: 44,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+              shape: BoxShape.circle,
+              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+            ),
+            child: const Icon(Icons.two_wheeler_rounded, color: Colors.white, size: 22),
+          ),
+        ),
+    ];
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Tracking — ${widget.orderId}'),
-        backgroundColor: Colors.deepPurple,
-        centerTitle: true,
-      ),
+      backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          // Flutter Map
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              initialCenter: pickup,
+              initialCenter: _riderPosition ?? pickup,
               initialZoom: 13.5,
-              onMapReady: () {
-                // fit bounds to show entire route
-                Future.delayed(const Duration(milliseconds: 500), () {
-                  _fitMapToRoute();
-                });
-              },
+              onMapReady: () => Future.delayed(
+                const Duration(milliseconds: 400),
+                () => _fitMapToRoute(pickup, dropoff),
+              ),
             ),
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.app',
+                userAgentPackageName: 'com.example.dispatch_rider_new',
               ),
-              MarkerLayer(markers: _markers),
-              PolylineLayer(polylines: _polylines),
+              MarkerLayer(markers: markers),
+              PolylineLayer(polylines: [
+                Polyline(points: [pickup, dropoff], color: AppColors.primary, strokeWidth: 3),
+              ]),
             ],
           ),
 
-          // Top floating card: status & ETA
+          // Back button — floats over the map, no AppBar competing for space.
           Positioned(
-            top: 16,
-            left: 12,
-            right: 12,
-            child: _floatingStatusCard(),
+            top: MediaQuery.of(context).padding.top + AppSpacing.sm,
+            left: AppSpacing.md,
+            child: _MapControlButton(
+              icon: Icons.arrow_back_rounded,
+              onTap: () => Navigator.pop(context),
+            ),
           ),
 
-          // Vertical timeline on the right
           Positioned(
-            top: 110,
-            right: 8,
-            child: _timelineColumn(),
+            top: MediaQuery.of(context).padding.top + AppSpacing.sm,
+            left: 0,
+            right: 0,
+            child: Center(child: _StageBanner(status: status)),
           ),
 
-          // Bottom rider card
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
-            child: _bottomRiderCard(),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: _delivery == null
+                ? const Padding(
+                    padding: EdgeInsets.all(AppSpacing.xl),
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  )
+                : FadeSlideIn(
+                    child: _JobSheet(
+                      delivery: _delivery!,
+                      counterpart: _counterpartProfile,
+                      isRider: _isRider,
+                      distanceKm: _distanceRemainingKm,
+                      actionInFlight: _actionInFlight,
+                      onCall: () => _callNumber(_counterpartProfile?['phone_number'] as String?),
+                      onPrimaryAction: () {
+                        switch (status) {
+                          case 'accepted':
+                            _advance('picked_up');
+                            break;
+                          case 'picked_up':
+                            _advance('in_transit');
+                            break;
+                          case 'in_transit':
+                            _openCompletionSheet();
+                            break;
+                        }
+                      },
+                      onRelease: _isRider && status == 'accepted' ? _releaseJob : null,
+                      onClientCancel:
+                          !_isRider && status == 'accepted' ? _clientCancel : null,
+                    ),
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _fitMapToRoute() async {
-    final pickup = widget.pickup ?? _defaultPickup;
-    final dest = widget.destination ?? _defaultDestination;
-    final riderPos = _riderPosition;
-
-    List<LatLng> points = [pickup, dest];
-    if (riderPos != null) {
-      points.add(riderPos);
-    }
-
-    LatLngBounds bounds = _boundsFromLatLngList(points);
-    try {
-      _mapController.fitCamera(CameraFit.bounds(bounds: bounds));
-    } catch (_) {
-      // can't animate immediately sometimes; ignore
-    }
-  }
-
-  LatLngBounds _boundsFromLatLngList(List<LatLng> pts) {
-    if (pts.isEmpty) return LatLngBounds(_defaultPickup, _defaultDestination);
-
-    var south = pts.first.latitude;
-    var north = pts.first.latitude;
-    var west = pts.first.longitude;
-    var east = pts.first.longitude;
-    for (final p in pts) {
+  Future<void> _fitMapToRoute(LatLng pickup, LatLng dropoff) async {
+    final points = [pickup, dropoff, if (_riderPosition != null) _riderPosition!];
+    var south = points.first.latitude, north = points.first.latitude;
+    var west = points.first.longitude, east = points.first.longitude;
+    for (final p in points) {
       south = min(south, p.latitude);
       north = max(north, p.latitude);
       west = min(west, p.longitude);
       east = max(east, p.longitude);
     }
-    return LatLngBounds(LatLng(south, west), LatLng(north, east));
+    try {
+      _mapController.fitCamera(CameraFit.bounds(
+        bounds: LatLngBounds(LatLng(south, west), LatLng(north, east)),
+        padding: const EdgeInsets.fromLTRB(60, 140, 60, 320),
+      ));
+    } catch (_) {}
   }
+}
 
-  Widget _floatingStatusCard() {
-    final statusText = _statusTextForStep(_currentStep);
+class _MapControlButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _MapControlButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
     return Material(
-      elevation: 6,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(12)),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
+      color: AppColors.mapControlSurface,
+      shape: const CircleBorder(),
+      elevation: 4,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Padding(
+          padding: const EdgeInsets.all(11),
+          child: Icon(icon, color: AppColors.textPrimary, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _StageBanner extends StatelessWidget {
+  final String status;
+  const _StageBanner({required this.status});
+
+  static const _labels = {
+    'accepted': 'Heading to pickup',
+    'picked_up': 'Package collected',
+    'in_transit': 'On the way to destination',
+    'completed': 'Delivered',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.mapControlSurface,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        boxShadow: AppShadows.card,
+      ),
+      child: Text(
+        _labels[status] ?? status,
+        style: AppText.body.copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+class _JobSheet extends StatelessWidget {
+  final Map<String, dynamic> delivery;
+  final Map<String, dynamic>? counterpart;
+  final bool isRider;
+  final double? distanceKm;
+  final bool actionInFlight;
+  final VoidCallback onCall;
+  final VoidCallback onPrimaryAction;
+  final VoidCallback? onRelease;
+  final VoidCallback? onClientCancel;
+
+  const _JobSheet({
+    required this.delivery,
+    required this.counterpart,
+    required this.isRider,
+    required this.distanceKm,
+    required this.actionInFlight,
+    required this.onCall,
+    required this.onPrimaryAction,
+    this.onRelease,
+    this.onClientCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final status = delivery['status'] as String? ?? 'accepted';
+    final name = counterpart?['full_name'] as String? ?? (isRider ? 'Client' : 'Rider');
+    final rating = (counterpart?['rating'] as num?)?.toDouble();
+    final price = (delivery['price_naira'] as num?)?.toDouble() ?? 0;
+    final targetAddress = status == 'accepted'
+        ? delivery['pickup_address'] as String? ?? ''
+        : delivery['dropoff_address'] as String? ?? '';
+
+    final primaryLabels = {
+      'accepted': 'Confirm Pickup',
+      'picked_up': 'Start Delivery',
+      'in_transit': 'Complete Delivery',
+    };
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, MediaQuery.of(context).padding.bottom + AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusXl)),
+        boxShadow: AppShadows.sheet,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 26,
+                backgroundColor: AppColors.primary.withAlpha(24),
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: AppText.h3.copyWith(color: AppColors.primary),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(statusText,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 6),
-                    Text(
-                        'ETA: $_minutesRemaining min • ${_distanceRemainingKm.toStringAsFixed(1)} km',
-                        style: const TextStyle(
-                            fontSize: 13, color: Colors.black54)),
-                  ]),
-            ),
-            CircleAvatar(
-              backgroundColor: Colors.deepPurple,
-              child: Text(_riderRatingShort(),
-                  style: const TextStyle(color: Colors.white)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _riderRatingShort() => _riderRating.toStringAsFixed(1);
-
-  String _statusTextForStep(OrderStep s) {
-    switch (s) {
-      case OrderStep.accepted:
-        return 'Order accepted';
-      case OrderStep.riderToPickup:
-        return 'Rider is on the way to pickup';
-      case OrderStep.packagePicked:
-        return 'Package picked';
-      case OrderStep.riderToDestination:
-        return 'Rider heading to destination';
-      case OrderStep.delivered:
-        return 'Delivered';
-    }
-  }
-
-  Widget _timelineColumn() {
-    // vertical timeline showing 5 steps
-    final steps = [
-      'Order accepted',
-      'Rider to pickup',
-      'Package picked',
-      'Rider to destination',
-      'Delivered',
-    ];
-    final stepEnums = OrderStep.values;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: List.generate(steps.length, (i) {
-        final step = stepEnums[i];
-        final done = step.index < _currentStep.index ||
-            step == _currentStep && _currentStep == OrderStep.delivered;
-        final active =
-            step == _currentStep && _currentStep != OrderStep.delivered;
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            children: [
-              // dot & line
-              Column(
-                children: [
-                  Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      color: done
-                          ? Colors.green
-                          : (active ? Colors.deepPurple : Colors.white),
-                      border: Border.all(
-                          color: done || active
-                              ? Colors.transparent
-                              : Colors.grey.shade400),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                  ),
-                  if (i != steps.length - 1)
-                    Container(
-                      width: 2,
-                      height: 36,
-                      color: Colors.grey.shade300,
-                      margin: const EdgeInsets.symmetric(vertical: 6),
-                    ),
-                ],
-              ),
-
-              const SizedBox(width: 8),
-
-              // text card
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: active ? Colors.deepPurple.shade50 : Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: active
-                      ? [
-                          BoxShadow(
-                              color: Colors.deepPurple
-                                  .withAlpha((0.06 * 255).round()),
-                              blurRadius: 6)
-                        ]
-                      : null,
-                ),
-                child: Text(
-                  steps[i],
-                  style: TextStyle(
-                    color: done
-                        ? Colors.green.shade700
-                        : (active ? Colors.deepPurple : Colors.black87),
-                    fontWeight:
-                        active || done ? FontWeight.bold : FontWeight.normal,
-                  ),
+                    Text(name, style: AppText.h3),
+                    if (rating != null)
+                      Row(
+                        children: [
+                          const Icon(Icons.star_rounded, size: 14, color: AppColors.warning),
+                          const SizedBox(width: 2),
+                          Text(rating.toStringAsFixed(1), style: AppText.bodyMuted),
+                        ],
+                      ),
+                  ],
                 ),
               ),
+              if (distanceKm != null)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('${distanceKm!.toStringAsFixed(1)} km', style: AppText.h3),
+                    Text('away', style: AppText.caption),
+                  ],
+                ),
+              const SizedBox(width: AppSpacing.sm),
+              _MapControlButton(icon: Icons.call_rounded, onTap: onCall),
             ],
           ),
-        );
-      }),
-    );
-  }
-
-  Widget _bottomRiderCard() {
-    final rName = _riderName;
-    return Material(
-      elevation: 12,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(12)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // top row: rider + basic info + ETA
-            Row(
-              children: [
-                CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.grey.shade200,
-                    child: Text(rName.substring(0, 1))),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(rName,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 4),
-                        Text(_vehicle,
-                            style: const TextStyle(
-                                color: Colors.black54, fontSize: 13)),
-                      ]),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              const Icon(Icons.location_on_rounded, size: 16, color: AppColors.textMuted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(targetAddress,
+                    style: AppText.bodyMuted, maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+              Text('₦${price.toStringAsFixed(0)}',
+                  style: AppText.h3.copyWith(color: AppColors.money)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          if (isRider && primaryLabels.containsKey(status))
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: actionInFlight ? null : onPrimaryAction,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: status == 'in_transit' ? AppColors.success : AppColors.primary,
                 ),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text('$_minutesRemaining min',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text('${_distanceRemainingKm.toStringAsFixed(1)} km',
-                      style: const TextStyle(color: Colors.black54)),
-                ]),
-              ],
+                child: actionInFlight
+                    ? const SizedBox(
+                        height: 22, width: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text(primaryLabels[status]!),
+              ),
             ),
-            const SizedBox(height: 8),
-
-            // action buttons
-            Row(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () => _callNumber(_riderPhone),
-                  icon: const Icon(Icons.call, size: 18),
-                  label: const Text('Call'),
-                  style:
-                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () => _openChat(),
-                  icon: const Icon(Icons.chat_bubble_outline),
-                  label: const Text('Chat'),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _cancelOrder,
-                  icon: const Icon(Icons.close),
-                  label: const Text('Cancel'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            // small progress / instructions
-            Row(
-              children: [
-                const Icon(Icons.location_on,
-                    size: 16, color: Colors.deepPurple),
-                const SizedBox(width: 6),
-                Expanded(
-                    child:
-                        Text('Rider is on the move — stay at pickup location')),
-              ],
+          if (onRelease != null || onClientCancel != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: onRelease ?? onClientCancel,
+                style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+                child: Text(onRelease != null ? 'Release this job' : 'Cancel delivery'),
+              ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }
+}
 
-  Future<void> _callNumber(String phone) async {
-    final uri = Uri.parse('tel:$phone');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not launch phone')));
-      }
-    }
-  }
+class _CompletionSheet extends StatelessWidget {
+  final String destination;
+  final double price;
+  const _CompletionSheet({required this.destination, required this.price});
 
-  void _openChat() {
-    // Hook into your app's chat flow
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Open chat (not implemented)')));
-    }
-  }
-
-  void _cancelOrder() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cancel Delivery?'),
-        content: const Text('Are you sure you want to cancel this delivery?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('No')),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              // Stop location tracking
-              LocationTrackingService().stopTracking();
-              Navigator.pop(context); // go back
-            },
-            child: const Text('Yes, cancel'),
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, MediaQuery.of(context).padding.bottom + AppSpacing.lg),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusXl)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(
+              color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: AppSpacing.lg),
+          Container(
+            width: 64, height: 64,
+            decoration: BoxDecoration(color: AppColors.success.withAlpha(24), shape: BoxShape.circle),
+            child: const Icon(Icons.task_alt_rounded, color: AppColors.success, size: 32),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text('Mark as delivered?', style: AppText.h2, textAlign: TextAlign.center),
+          const SizedBox(height: AppSpacing.xs),
+          Text('Confirm the package reached $destination.',
+              style: AppText.bodyMuted, textAlign: TextAlign.center),
+          const SizedBox(height: AppSpacing.lg),
+          SizedBox(
+            width: double.infinity,
+            height: 55,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
+              child: const Text('Confirm Delivery'),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not yet'),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DeliveredSuccessDialog extends StatelessWidget {
+  final double price;
+  const _DeliveredSuccessDialog({required this.price});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: PopIn(
+        child: Container(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72, height: 72,
+                decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
+                child: const Icon(Icons.check_rounded, color: Colors.white, size: 40),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text('Delivered!', style: AppText.h1),
+              const SizedBox(height: AppSpacing.xs),
+              Text('+₦${price.toStringAsFixed(0)} added to your earnings',
+                  style: AppText.body.copyWith(color: AppColors.money, fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
       ),
     );
   }

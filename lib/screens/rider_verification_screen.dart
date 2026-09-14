@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/custom_textfield.dart';
 
 class RiderVerificationScreen extends StatefulWidget {
   const RiderVerificationScreen({super.key});
@@ -50,6 +52,7 @@ class _RiderVerificationScreenState extends State<RiderVerificationScreen> {
       documentImage: _documentImage ?? File(''), // Placeholder
       context: context,
     );
+    if (!mounted) return;
     setState(() => _loading = false);
 
     if (error != null) {
@@ -67,148 +70,107 @@ class _RiderVerificationScreenState extends State<RiderVerificationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Rider Verification'),
-        backgroundColor: Colors.green,
-      ),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text('Rider Verification')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Please provide the following information for verification:',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: AppText.h3,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.lg),
 
-            // NIN
-            TextField(
+            CustomTextField(
               controller: _ninController,
-              decoration: InputDecoration(
-                labelText: 'National Identification Number (NIN)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              label: 'National Identification Number (NIN)',
+              icon: Icons.badge_outlined,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.md),
 
-            // Address
-            TextField(
+            CustomTextField(
               controller: _addressController,
-              decoration: InputDecoration(
-                labelText: 'Address',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              label: 'Address',
+              icon: Icons.home_outlined,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.md),
 
-            // Proof of Address
-            TextField(
+            CustomTextField(
               controller: _proofOfAddressController,
-              decoration: InputDecoration(
-                labelText: 'Proof of Address',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              label: 'Proof of Address',
+              icon: Icons.receipt_long_outlined,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.md),
 
-            // Full Name
-            TextField(
+            CustomTextField(
               controller: _fullNameController,
-              decoration: InputDecoration(
-                labelText: 'Full Name',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              label: 'Full Name',
+              icon: Icons.person_outline,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.md),
 
-            // Next of Kin
-            TextField(
+            CustomTextField(
               controller: _nextOfKinController,
-              decoration: InputDecoration(
-                labelText: 'Next of Kin',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              label: 'Next of Kin',
+              icon: Icons.people_outline,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.md),
 
-            // Next of Kin Phone
-            TextField(
+            CustomTextField(
               controller: _nextOfKinPhoneController,
-              decoration: InputDecoration(
-                labelText: 'Next of Kin Phone',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              label: 'Next of Kin Phone',
+              icon: Icons.phone_outlined,
+              keyboardType: TextInputType.phone,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.md),
 
-            // Next of Kin Relationship
-            TextField(
+            CustomTextField(
               controller: _nextOfKinRelationshipController,
-              decoration: InputDecoration(
-                labelText: 'Next of Kin Relationship',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              label: 'Next of Kin Relationship',
+              icon: Icons.diversity_3_outlined,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.lg),
 
-            // Document Upload
-            const Text(
-              'Upload Document (Driver\'s License or Voter\'s Card):',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Text(
+              "Upload Document (Driver's License or Voter's Card):",
+              style: AppText.h3,
             ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
+            const SizedBox(height: AppSpacing.sm),
+            OutlinedButton.icon(
               onPressed: _pickDocumentImage,
-              icon: const Icon(Icons.upload),
+              icon: const Icon(Icons.upload_rounded),
               label: const Text('Select Image'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
               ),
             ),
             if (_documentImage != null)
               Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child:
-                    Text('Selected: ${_documentImage!.path.split('/').last}'),
+                padding: const EdgeInsets.only(top: AppSpacing.sm),
+                child: Text(
+                  'Selected: ${_documentImage!.path.split('/').last}',
+                  style: AppText.bodyMuted,
+                ),
               ),
-            const SizedBox(height: 30),
+            const SizedBox(height: AppSpacing.xl),
 
-            // Submit Button
-            _loading
-                ? const CircularProgressIndicator()
-                : SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: ElevatedButton(
-                      onPressed: _submitVerification,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Submit Verification',
-                        style: TextStyle(fontSize: 18, color: Colors.white),
-                      ),
-                    ),
-                  ),
+            SizedBox(
+              width: double.infinity,
+              height: 55,
+              child: ElevatedButton(
+                onPressed: _loading ? null : _submitVerification,
+                child: _loading
+                    ? const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Submit Verification'),
+              ),
+            ),
           ],
         ),
       ),

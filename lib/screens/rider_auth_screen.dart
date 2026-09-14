@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class RiderAuthScreen extends StatelessWidget {
   const RiderAuthScreen({super.key});
@@ -6,70 +7,54 @@ class RiderAuthScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg, vertical: AppSpacing.md),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text(
-                'Rider Section',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  color: AppColors.secondary.withAlpha(24),
+                  shape: BoxShape.circle,
                 ),
+                child: const Icon(Icons.delivery_dining_rounded,
+                    size: 44, color: AppColors.secondary),
               ),
-              const SizedBox(height: 40),
-              const Text(
+              const SizedBox(height: AppSpacing.lg),
+              Text('Rider Section', style: AppText.h1, textAlign: TextAlign.center),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
                 'Login or register as a rider to accept delivery orders.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.black54,
-                ),
+                style: AppText.bodyMuted,
               ),
-              const SizedBox(height: 60),
+              const SizedBox(height: AppSpacing.xxl),
               ElevatedButton(
                 onPressed: () {
                   Navigator.pushNamed(context, '/rider-dashboard');
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  backgroundColor: AppColors.secondary,
+                  minimumSize: const Size(double.infinity, 55),
                 ),
-                child: const Text(
-                  "Rider Login",
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white),
-                ),
+                child: const Text('Rider Login'),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: AppSpacing.md),
               OutlinedButton(
                 onPressed: () {
                   Navigator.pushNamed(context, '/rider-register');
                 },
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.green),
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  side: const BorderSide(color: AppColors.secondary, width: 1.4),
+                  foregroundColor: AppColors.secondary,
+                  minimumSize: const Size(double.infinity, 55),
                 ),
-                child: const Text(
-                  "Rider Register",
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                child: const Text('Rider Register'),
               ),
             ],
           ),

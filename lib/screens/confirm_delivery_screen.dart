@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/delivery_service.dart';
 import '../utils/pricing_utils.dart';
+import '../theme/app_theme.dart';
 
 class ConfirmDeliveryScreen extends StatefulWidget {
   const ConfirmDeliveryScreen({Key? key}) : super(key: key);
@@ -24,7 +24,7 @@ class _ConfirmDeliveryScreenState extends State<ConfirmDeliveryScreen> {
 
   bool searchingForRider = false;
   String? deliveryId;
-  Stream<DocumentSnapshot>? deliveryStream;
+  Stream<Map<String, dynamic>?>? deliveryStream;
 
   @override
   void didChangeDependencies() {
@@ -55,7 +55,7 @@ class _ConfirmDeliveryScreenState extends State<ConfirmDeliveryScreen> {
 
     try {
       // Get current user ID
-      final user = FirebaseAuth.instance.currentUser;
+      final user = Supabase.instance.client.auth.currentUser;
       if (user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please login to continue')),
@@ -68,7 +68,7 @@ class _ConfirmDeliveryScreenState extends State<ConfirmDeliveryScreen> {
 
       // Create delivery request and notify riders
       deliveryId = await DeliveryService.createDeliveryRequest(
-        clientId: user.uid,
+        clientId: user.id,
         pickupLocation: pickup,
         destination: destination,
         weight: weight,
@@ -82,22 +82,19 @@ class _ConfirmDeliveryScreenState extends State<ConfirmDeliveryScreen> {
       );
 
       // Set up stream to listen for delivery status changes
-      deliveryStream = FirebaseFirestore.instance
-          .collection('deliveries')
-          .doc(deliveryId)
-          .snapshots();
+      deliveryStream = DeliveryService.getDelivery(deliveryId!);
 
-      deliveryStream!.listen((snapshot) {
-        if (snapshot.exists) {
-          final data = snapshot.data() as Map<String, dynamic>;
+      deliveryStream!.listen((data) {
+        if (data != null) {
           final status = data['status'];
 
           if (status == 'accepted' && mounted) {
             // Get rider details
-            final riderId = data['riderId'];
+            final riderId = data['rider_id'];
             // Navigate to rider details screen
             Navigator.pushReplacementNamed(context, '/riderdetails',
                 arguments: {
+                  'deliveryId': deliveryId,
                   'riderId': riderId,
                   'pickup': pickup,
                   'destination': destination,
@@ -130,31 +127,25 @@ class _ConfirmDeliveryScreenState extends State<ConfirmDeliveryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Confirm Delivery"),
-        backgroundColor: Colors.blue,
-      ),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text("Confirm Delivery")),
       body: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 10),
-            Text("Pickup:",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Text(pickup, style: TextStyle(fontSize: 16)),
-            const SizedBox(height: 20),
-            Text("Destination:",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Text(destination, style: TextStyle(fontSize: 16)),
-            const SizedBox(height: 20),
-            Text("Price:",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text("Pickup:", style: AppText.h3),
+            Text(pickup, style: AppText.body),
+            const SizedBox(height: AppSpacing.md),
+            Text("Destination:", style: AppText.h3),
+            Text(destination, style: AppText.body),
+            const SizedBox(height: AppSpacing.md),
+            Text("Price:", style: AppText.h3),
             Text("₦${price.toStringAsFixed(0)}",
-                style: TextStyle(fontSize: 16, color: Colors.blue)),
-            const SizedBox(height: 20),
-            Text("Payment Method:",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                style: AppText.h2.copyWith(color: AppColors.success)),
+            const SizedBox(height: AppSpacing.md),
+            Text("Payment Method:", style: AppText.h3),
             Column(
               children: [
                 RadioListTile<String>(
@@ -179,37 +170,30 @@ class _ConfirmDeliveryScreenState extends State<ConfirmDeliveryScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.md),
             if (!searchingForRider)
-              Center(
+              SizedBox(
+                width: double.infinity,
+                height: 55,
                 child: ElevatedButton(
                   onPressed: requestRider,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 40, vertical: 14),
-                  ),
-                  child: const Text(
-                    "Confirm & Search for Rider",
-                    style: TextStyle(fontSize: 18, color: Colors.white),
-                  ),
+                  child: const Text("Confirm & Search for Rider"),
                 ),
               ),
             if (searchingForRider)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                color: Colors.blue.shade100,
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withAlpha(20),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    CircularProgressIndicator(),
-                    SizedBox(width: 12),
-                    Text(
-                      "Looking for rider...",
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    )
+                  children: [
+                    const CircularProgressIndicator(color: AppColors.info),
+                    const SizedBox(width: 12),
+                    Text("Looking for rider...", style: AppText.h3),
                   ],
                 ),
               ),

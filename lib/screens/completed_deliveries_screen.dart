@@ -1,230 +1,217 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/delivery_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/status_badge.dart';
+import '../widgets/skeleton.dart';
+import '../widgets/motion.dart';
 
-class CompletedDeliveriesScreen extends StatelessWidget {
+class CompletedDeliveriesScreen extends StatefulWidget {
   const CompletedDeliveriesScreen({super.key});
 
   @override
+  State<CompletedDeliveriesScreen> createState() =>
+      _CompletedDeliveriesScreenState();
+}
+
+class _CompletedDeliveriesScreenState extends State<CompletedDeliveriesScreen> {
+  final User? _currentUser = Supabase.instance.client.auth.currentUser;
+  String? _role;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRole();
+  }
+
+  Future<void> _loadRole() async {
+    final uid = _currentUser?.id;
+    if (uid == null) return;
+    final profile = await Supabase.instance.client
+        .from('profiles')
+        .select('role')
+        .eq('id', uid)
+        .maybeSingle();
+    if (!mounted) return;
+    setState(() => _role = profile?['role'] as String? ?? 'client');
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Mock data for completed deliveries
-    final completedDeliveries = [
-      {
-        'id': 'ORD001',
-        'pickup': 'Lagos Island',
-        'destination': 'Victoria Island',
-        'distance': 5.2,
-        'weight': 2.5,
-        'packageType': 'Small Package',
-        'price': 1500,
-        'rating': 5.0,
-        'completedAt': '2024-01-15 14:30',
-        'customerFeedback': 'Great service!',
-      },
-      {
-        'id': 'ORD002',
-        'pickup': 'Ikeja',
-        'destination': 'Surulere',
-        'distance': 8.1,
-        'weight': 6.0,
-        'packageType': 'Large Package',
-        'price': 3200,
-        'rating': 4.8,
-        'completedAt': '2024-01-15 12:15',
-        'customerFeedback': 'Package arrived on time',
-      },
-      {
-        'id': 'ORD003',
-        'pickup': 'Abuja Central',
-        'destination': 'Wuse',
-        'distance': 3.8,
-        'weight': 1.2,
-        'packageType': 'Small Package',
-        'price': 1200,
-        'rating': 4.9,
-        'completedAt': '2024-01-15 10:45',
-        'customerFeedback': 'Excellent rider!',
-      },
-      {
-        'id': 'ORD004',
-        'pickup': 'Port Harcourt',
-        'destination': 'GRA Phase 2',
-        'distance': 12.5,
-        'weight': 4.0,
-        'packageType': 'Small Package',
-        'price': 2800,
-        'rating': 5.0,
-        'completedAt': '2024-01-14 16:20',
-        'customerFeedback': 'Very professional',
-      },
-    ];
+    if (_currentUser == null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(title: const Text('Completed Deliveries')),
+        body: const EmptyState(
+          icon: Icons.lock_outline_rounded,
+          title: 'Please log in',
+          subtitle: 'Log in to view completed deliveries',
+          color: AppColors.info,
+        ),
+      );
+    }
+
+    if (_role == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      );
+    }
+
+    final isRider = _role == 'rider';
+    final stream = isRider
+        ? DeliveryService.getCompletedDeliveries(_currentUser.id)
+        : DeliveryService.getCompletedDeliveriesForClient(_currentUser.id);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Completed Deliveries'),
-        backgroundColor: Colors.green,
-      ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: completedDeliveries.length,
-        itemBuilder: (context, index) {
-          final delivery = completedDeliveries[index];
-          return Card(
-            margin: const EdgeInsets.only(bottom: 16),
-            elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Order ${delivery['id']}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text(
-                          'Completed',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on,
-                          color: Colors.green, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Pickup: ${delivery['pickup']}',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.flag, color: Colors.red, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Destination: ${delivery['destination']}',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Text(
-                        '${delivery['distance']} km',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        '${delivery['weight']} kg',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.purple,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        '${delivery['packageType']}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '₦${delivery['price']}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 20),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${delivery['rating']}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Completed: ${delivery['completedAt']}',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.chat_bubble_outline,
-                            color: Colors.grey, size: 16),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '"${delivery['customerFeedback']}"',
-                            style: TextStyle(
-                              fontStyle: FontStyle.italic,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text('Completed Deliveries')),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: stream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return ListView(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              children: const [SkeletonDeliveryCard(), SkeletonDeliveryCard()],
+            );
+          }
+          if (snapshot.hasError) {
+            return EmptyState(
+              icon: Icons.error_outline_rounded,
+              title: 'Could not load history',
+              subtitle: '${snapshot.error}',
+              color: AppColors.danger,
+            );
+          }
+
+          final deliveries = snapshot.data ?? [];
+          if (deliveries.isEmpty) {
+            return const EmptyState(
+              icon: Icons.check_circle_rounded,
+              title: 'No completed deliveries yet',
+              subtitle: 'Finished deliveries will show up here',
+              color: AppColors.success,
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            itemCount: deliveries.length,
+            itemBuilder: (context, i) => FadeSlideIn(
+              delay: Duration(milliseconds: i * 40),
+              child: _CompletedCard(
+                delivery: deliveries[i],
+                showRateButton: !isRider,
               ),
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _CompletedCard extends StatelessWidget {
+  final Map<String, dynamic> delivery;
+  final bool showRateButton;
+
+  const _CompletedCard({required this.delivery, required this.showRateButton});
+
+  @override
+  Widget build(BuildContext context) {
+    final pickup = delivery['pickup_address'] as String? ?? 'Unknown pickup';
+    final destination =
+        delivery['dropoff_address'] as String? ?? 'Unknown destination';
+    final price = (delivery['price_naira'] as num?)?.toDouble() ?? 0.0;
+    final weight = (delivery['weight_kg'] as num?)?.toDouble() ?? 0.0;
+    final packageType = delivery['package_type'] as String? ?? 'Package';
+    final completedAt = delivery['completed_at'] as String?;
+    final ratingSubmitted = delivery['rating_submitted'] == true;
+    final deliveryId = delivery['id'] as String;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(10),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const StatusBadge(status: 'completed'),
+              Text('₦${price.toStringAsFixed(0)}',
+                  style: AppText.h3.copyWith(color: AppColors.success)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              const Icon(Icons.inventory_2_rounded,
+                  size: 18, color: AppColors.textSecondary),
+              const SizedBox(width: AppSpacing.sm),
+              Text('$packageType • ${weight.toStringAsFixed(1)}kg',
+                  style: AppText.bodyMuted),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              const Icon(Icons.circle, size: 10, color: AppColors.accentGreen),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: Text(pickup, style: AppText.body)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(Icons.location_on_rounded,
+                  size: 18, color: AppColors.danger),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: Text(destination, style: AppText.body)),
+            ],
+          ),
+          if (completedAt != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Completed: ${DateTime.parse(completedAt).toLocal().toString().split('.').first}',
+              style: AppText.caption,
+            ),
+          ],
+          if (showRateButton) ...[
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              child: ratingSubmitted
+                  ? OutlinedButton.icon(
+                      onPressed: null,
+                      icon: const Icon(Icons.star_rounded),
+                      label: const Text('Rated'),
+                    )
+                  : ElevatedButton.icon(
+                      onPressed: () => Navigator.pushNamed(
+                        context,
+                        '/rate-rider',
+                        arguments: {'deliveryId': deliveryId},
+                      ),
+                      icon: const Icon(Icons.star_rounded),
+                      label: const Text('Rate your rider'),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.warning),
+                    ),
+            ),
+          ],
+        ],
       ),
     );
   }
